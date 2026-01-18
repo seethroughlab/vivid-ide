@@ -550,11 +550,22 @@ fn main() {
                                 // Create vivid context with window
                                 match unsafe { vivid::Context::with_window(ns_window, config) } {
                                     Ok(mut ctx) => {
+                                        // Set vivid root directory (submodule location)
+                                        let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                                            .parent().unwrap()  // vivid-ide
+                                            .join("vivid");
+
+                                        if let Err(e) = ctx.set_root_dir(&vivid_root) {
+                                            log::warn!("Failed to set vivid root dir: {:?}", e);
+                                        } else {
+                                            log::info!("Set vivid root: {:?}", vivid_root);
+                                        }
+
+                                        // Disable visualizer UI by default (IDE has its own UI)
+                                        ctx.set_visualizer_visible(false);
+
                                         // Auto-load a test project for development
-                                        let test_project = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                                            .parent().unwrap()  // tauri
-                                            .parent().unwrap()  // vivid
-                                            .join("projects/getting-started/02-operator-pipeline");
+                                        let test_project = vivid_root.join("projects/getting-started/02-operator-pipeline");
 
                                         if test_project.exists() {
                                             match ctx.load_project(&test_project) {

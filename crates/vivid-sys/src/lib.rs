@@ -229,6 +229,9 @@ extern "C" {
     /// Load a project from a directory path
     pub fn vivid_context_load_project(ctx: *mut VividContext, path: *const c_char) -> VividResult;
 
+    /// Set the vivid installation root directory (for embedded use)
+    pub fn vivid_context_set_root_dir(ctx: *mut VividContext, path: *const c_char) -> VividResult;
+
     /// Reload the current project
     pub fn vivid_context_reload(ctx: *mut VividContext) -> VividResult;
 

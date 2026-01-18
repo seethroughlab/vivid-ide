@@ -1,21 +1,29 @@
 use std::path::Path;
 
 fn main() {
+    let lib_path;
+
     // Priority 1: CI provides pre-built library via environment variable
-    if let Ok(lib_path) = std::env::var("VIVID_LIB_PATH") {
-        println!("cargo:rustc-link-search=native={}", lib_path);
+    if let Ok(path) = std::env::var("VIVID_LIB_PATH") {
+        lib_path = path;
         println!("cargo:rerun-if-env-changed=VIVID_LIB_PATH");
     }
     // Priority 2: Local vivid submodule build
     else if Path::new("../../vivid/build/lib").exists() {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let lib_path = Path::new(&manifest_dir).join("../../vivid/build/lib");
-        println!("cargo:rustc-link-search=native={}", lib_path.display());
+        let path = Path::new(&manifest_dir).join("../../vivid/build/lib");
+        lib_path = path.canonicalize().unwrap().to_string_lossy().to_string();
     }
     // Priority 3: System-installed vivid
     else {
-        println!("cargo:rustc-link-search=native=/usr/local/lib");
+        lib_path = "/usr/local/lib".to_string();
     }
+
+    println!("cargo:rustc-link-search=native={}", lib_path);
+
+    // Add rpath so the dylib can be found at runtime
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_path);
 
     // Link against vivid-c
     #[cfg(target_os = "macos")]

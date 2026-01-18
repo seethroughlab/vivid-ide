@@ -260,6 +260,21 @@ impl Context {
         check_result(result)
     }
 
+    /// Set the vivid installation root directory
+    ///
+    /// For embedded use: tells the hot-reload compiler where to find vivid headers
+    /// and libraries. Call this before `load_project()` when vivid is embedded as a
+    /// submodule and the executable is not in the standard vivid directory structure.
+    pub fn set_root_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
+        let path_str = path.as_ref().to_string_lossy();
+        let c_path = CString::new(path_str.as_ref())
+            .map_err(|_| Error::InvalidArgument("Invalid path".into()))?;
+
+        let result = unsafe { vivid_sys::vivid_context_set_root_dir(self.ptr, c_path.as_ptr()) };
+
+        check_result(result)
+    }
+
     /// Reload the current project
     pub fn reload(&mut self) -> Result<()> {
         let result = unsafe { vivid_sys::vivid_context_reload(self.ptr) };

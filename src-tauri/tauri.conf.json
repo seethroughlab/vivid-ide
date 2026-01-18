@@ -39,7 +39,6 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "identifier": "com.seethroughlab.vivid-ide",
     "shortDescription": "Creative coding IDE with hot-reload",
     "longDescription": "Vivid IDE - Visual creative coding IDE with integrated runtime, node-based chain visualizer, and built-in terminal for Claude Code.",
     "category": "DeveloperTool",
