@@ -1,0 +1,4 @@
+[submodule "vivid"]
+	path = vivid
+	url = https://github.com/seethroughlab/vivid.git
+	branch = master

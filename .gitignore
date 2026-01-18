@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+target/
+dist/
+
+# Build artifacts
+*.dylib
+*.so
+*.dll
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
