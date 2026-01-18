@@ -232,6 +232,9 @@ extern "C" {
     /// Set the vivid installation root directory (for embedded use)
     pub fn vivid_context_set_root_dir(ctx: *mut VividContext, path: *const c_char) -> VividResult;
 
+    /// Configure asset search paths before creating a context (for embedded use)
+    pub fn vivid_configure_asset_paths(vivid_root: *const c_char) -> VividResult;
+
     /// Reload the current project
     pub fn vivid_context_reload(ctx: *mut VividContext) -> VividResult;
 

@@ -30,7 +30,7 @@ mod chain;
 mod operator;
 mod error;
 
-pub use context::{Context, ContextConfig, CompileStatus, version, api_version};
+pub use context::{Context, ContextConfig, CompileStatus, version, api_version, configure_asset_paths};
 pub use chain::Chain;
 pub use operator::{Operator, OutputKind, ParamType, ParamDecl, TextureInfo};
 pub use operator::{RegistryEntry, registry_count, registry_entry, registry_entries};

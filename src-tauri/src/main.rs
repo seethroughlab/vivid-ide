@@ -271,6 +271,88 @@ fn select_operator(name: String) {
     }
 }
 
+// =============================================================================
+// Bundle command
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleOptions {
+    pub project_path: String,
+    pub output_dir: Option<String>,
+    pub app_name: Option<String>,
+    pub platform: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleResult {
+    pub success: bool,
+    pub output: String,
+    pub bundle_path: Option<String>,
+}
+
+#[tauri::command]
+async fn bundle_project(options: BundleOptions) -> Result<BundleResult, String> {
+    use std::process::Command;
+
+    // Find the vivid CLI binary
+    let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("Failed to get parent directory")?
+        .join("vivid");
+
+    let vivid_bin = vivid_root.join("build/bin/vivid");
+
+    if !vivid_bin.exists() {
+        return Err(format!(
+            "Vivid CLI not found at {:?}. Please build vivid first.",
+            vivid_bin
+        ));
+    }
+
+    // Build command arguments
+    let mut cmd = Command::new(&vivid_bin);
+    cmd.arg("bundle");
+    cmd.arg(&options.project_path);
+
+    if let Some(ref output_dir) = options.output_dir {
+        cmd.arg("-o").arg(output_dir);
+    }
+    if let Some(ref app_name) = options.app_name {
+        cmd.arg("-n").arg(app_name);
+    }
+    if let Some(ref platform) = options.platform {
+        cmd.arg("-p").arg(platform);
+    }
+
+    log::info!("[Tauri] Running bundle command: {:?}", cmd);
+
+    // Execute and capture output
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to execute vivid bundle: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined_output = if stderr.is_empty() {
+        stdout.clone()
+    } else {
+        format!("{}\n{}", stdout, stderr)
+    };
+
+    // Try to extract bundle path from output (look for "Bundle created: <path>")
+    let bundle_path = stdout
+        .lines()
+        .find(|line| line.contains("Bundle created:"))
+        .and_then(|line| line.split("Bundle created:").nth(1))
+        .map(|s| s.trim().to_string());
+
+    Ok(BundleResult {
+        success: output.status.success(),
+        output: combined_output,
+        bundle_path,
+    })
+}
+
 /// Global vivid state, initialized after window is ready
 static VIVID_STATE: OnceLock<Mutex<VividState>> = OnceLock::new();
 /// Frame counter to delay initialization
@@ -520,6 +602,7 @@ fn main() {
             toggle_visualizer,
             get_selected_operator,
             select_operator,
+            bundle_project,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -540,6 +623,17 @@ fn main() {
 
                         if let Some(window) = app_handle.get_webview_window("main") {
                             if let Some(ns_window) = get_ns_window(&window) {
+                                // Configure asset paths BEFORE creating context
+                                let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                                    .parent().unwrap()  // vivid-ide
+                                    .join("vivid");
+
+                                if let Err(e) = vivid::configure_asset_paths(&vivid_root) {
+                                    log::warn!("Failed to configure asset paths: {:?}", e);
+                                } else {
+                                    log::info!("Configured asset paths for: {:?}", vivid_root);
+                                }
+
                                 // Get window size
                                 let size = window.inner_size().unwrap_or_default();
                                 let config = vivid::ContextConfig::new(
@@ -550,15 +644,9 @@ fn main() {
                                 // Create vivid context with window
                                 match unsafe { vivid::Context::with_window(ns_window, config) } {
                                     Ok(mut ctx) => {
-                                        // Set vivid root directory (submodule location)
-                                        let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                                            .parent().unwrap()  // vivid-ide
-                                            .join("vivid");
-
+                                        // Set vivid root for hot-reload
                                         if let Err(e) = ctx.set_root_dir(&vivid_root) {
                                             log::warn!("Failed to set vivid root dir: {:?}", e);
-                                        } else {
-                                            log::info!("Set vivid root: {:?}", vivid_root);
                                         }
 
                                         // Disable visualizer UI by default (IDE has its own UI)

@@ -7,6 +7,19 @@ use std::ptr;
 use crate::chain::Chain;
 use crate::error::{check_result, Error, Result};
 
+/// Configure asset search paths before creating a context
+///
+/// For embedded use: tells vivid where to find shaders, fonts, and other assets.
+/// Call this BEFORE creating a Context when vivid is embedded as a submodule.
+pub fn configure_asset_paths<P: AsRef<Path>>(vivid_root: P) -> Result<()> {
+    let path_str = vivid_root.as_ref().to_string_lossy();
+    let c_path = CString::new(path_str.as_ref())
+        .map_err(|_| Error::InvalidArgument("Invalid path".into()))?;
+
+    let result = unsafe { vivid_sys::vivid_configure_asset_paths(c_path.as_ptr()) };
+    check_result(result)
+}
+
 /// Configuration for creating a vivid context
 #[derive(Debug, Clone)]
 pub struct ContextConfig {

@@ -118,3 +118,49 @@ export async function setParamColor(
 ): Promise<boolean> {
   return setParam(opName, paramName, [r, g, b, a]);
 }
+
+// =============================================================================
+// Bundle API
+// =============================================================================
+
+export interface BundleOptions {
+  project_path: string;
+  output_dir?: string;
+  app_name?: string;
+  platform?: "mac" | "windows" | "linux" | "ios";
+}
+
+export interface BundleResult {
+  success: boolean;
+  output: string;
+  bundle_path: string | null;
+}
+
+/**
+ * Bundle a project as a standalone application
+ * @param options Bundle configuration
+ * @returns Result with success status, output log, and bundle path
+ */
+export async function bundleProject(options: BundleOptions): Promise<BundleResult> {
+  return invoke<BundleResult>("bundle_project", { options });
+}
+
+/**
+ * Bundle the currently loaded project
+ * @param outputDir Optional output directory (defaults to current directory)
+ * @param appName Optional app display name (defaults to project folder name)
+ */
+export async function bundleCurrentProject(
+  outputDir?: string,
+  appName?: string
+): Promise<BundleResult> {
+  const projectInfo = await getProjectInfo();
+  if (!projectInfo.loaded || !projectInfo.project_path) {
+    throw new Error("No project loaded");
+  }
+  return bundleProject({
+    project_path: projectInfo.project_path,
+    output_dir: outputDir,
+    app_name: appName,
+  });
+}
