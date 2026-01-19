@@ -10,19 +10,6 @@
     <div id="app">
       <!-- Drag region for window movement (title bar area) -->
       <div class="titlebar" data-tauri-drag-region>
-        <!-- File menu -->
-        <div class="menu-bar">
-          <div class="menu-item" id="file-menu">
-            <span class="menu-label">File</span>
-            <div class="menu-dropdown" id="file-dropdown">
-              <button class="menu-option" id="menu-new-project">New Project...</button>
-              <button class="menu-option" id="menu-open-project">Open Project...</button>
-              <div class="menu-separator"></div>
-              <button class="menu-option" id="menu-open-file">Open File...</button>
-              <button class="menu-option" id="menu-save-file">Save</button>
-            </div>
-          </div>
-        </div>
         <span class="title" id="title">Vivid</span>
         <span class="status" id="status">WebGPU Active</span>
       </div>
@@ -84,6 +71,14 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- MCP setup banner (shown when Claude MCP is not configured) -->
+      <div class="mcp-banner hidden" id="mcp-banner">
+        <span class="mcp-icon">🔌</span>
+        <span class="mcp-message">Enable Claude Code integration for AI-assisted development</span>
+        <button class="mcp-setup-btn" id="mcp-setup-btn">Set Up</button>
+        <button class="mcp-dismiss" id="mcp-dismiss" title="Dismiss">×</button>
       </div>
 
       <!-- Error banner (shown when compile errors occur) -->

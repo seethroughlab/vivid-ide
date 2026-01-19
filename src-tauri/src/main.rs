@@ -4,23 +4,83 @@
 mod file_ops;
 mod pty;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::sync::OnceLock;
 use std::time::Instant;
-use tauri::{Manager, RunEvent, WindowEvent, Emitter};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Emitter};
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
 use serde::{Deserialize, Serialize};
 
-// Vivid context wrapper
-struct VividState {
+// =============================================================================
+// Application State (Tauri Managed)
+// =============================================================================
+
+/// Wrapper around vivid::Context for thread-safe access
+struct VividContext {
     ctx: vivid::Context,
 }
 
-// Need unsafe impl Send because vivid::Context contains raw pointers
-// but vivid is single-threaded and we only access from main thread
-unsafe impl Send for VividState {}
-unsafe impl Sync for VividState {}
+// Safety: vivid::Context contains raw pointers but is single-threaded.
+// We only access it from the main thread via Mutex.
+unsafe impl Send for VividContext {}
+unsafe impl Sync for VividContext {}
+
+/// Application state managed by Tauri
+pub struct AppState {
+    /// The vivid context, wrapped in Mutex for interior mutability
+    vivid: Mutex<Option<VividContext>>,
+    /// App handle for emitting events
+    app_handle: Mutex<Option<AppHandle>>,
+    /// Whether initialization has been attempted
+    init_attempted: AtomicBool,
+    /// Start time for performance tracking
+    start_time: Mutex<Option<Instant>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            vivid: Mutex::new(None),
+            app_handle: Mutex::new(None),
+            init_attempted: AtomicBool::new(false),
+            start_time: Mutex::new(None),
+        }
+    }
+}
+
+impl AppState {
+    /// Check if vivid is initialized
+    fn is_initialized(&self) -> bool {
+        self.vivid.lock().map(|g| g.is_some()).unwrap_or(false)
+    }
+
+    /// Execute a function with read-only vivid context access
+    fn with_vivid<T, F>(&self, f: F) -> Option<T>
+    where
+        F: FnOnce(&vivid::Context) -> T,
+    {
+        let guard = self.vivid.lock().ok()?;
+        guard.as_ref().map(|v| f(&v.ctx))
+    }
+
+    /// Execute a function with mutable vivid context access
+    fn with_vivid_mut<T, F>(&self, f: F) -> Option<T>
+    where
+        F: FnOnce(&mut vivid::Context) -> T,
+    {
+        let mut guard = self.vivid.lock().ok()?;
+        guard.as_mut().map(|v| f(&mut v.ctx))
+    }
+
+    /// Emit an event to the frontend
+    fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) {
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(handle) = guard.as_ref() {
+                let _ = handle.emit(event, payload);
+            }
+        }
+    }
+}
 
 // =============================================================================
 // Serializable types for webview communication
@@ -48,7 +108,7 @@ pub struct OperatorInfo {
     pub output_kind: String,
     pub bypassed: bool,
     pub input_count: usize,
-    pub inputs: Vec<String>,  // Names of input operators
+    pub inputs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,212 +123,236 @@ pub struct ParamInfo {
 }
 
 // =============================================================================
+// Event payload types
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VividInitializedPayload {
+    pub success: bool,
+    pub project_loaded: bool,
+    pub project_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompileStatusPayload {
+    pub success: bool,
+    pub message: Option<String>,
+    pub error_line: Option<u32>,
+    pub error_column: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OperatorSelectedPayload {
+    pub name: Option<String>,
+}
+
+// =============================================================================
 // Tauri commands for vivid state
 // =============================================================================
 
 #[tauri::command]
-fn get_project_info() -> ProjectInfo {
+fn get_project_info(state: tauri::State<'_, Arc<AppState>>) -> ProjectInfo {
     log::info!("[Tauri] get_project_info called");
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            let project_path = state.ctx.project_path();
-            let chain_path = project_path.as_ref().map(|p| format!("{}/chain.cpp", p));
-            let info = ProjectInfo {
-                loaded: state.ctx.has_project(),
-                project_path: project_path.clone(),
-                chain_path,
-            };
-            log::info!("[Tauri] get_project_info returning: loaded={}, path={:?}", info.loaded, project_path);
-            return info;
+    state.with_vivid(|ctx| {
+        let project_path = ctx.project_path();
+        let chain_path = project_path.as_ref().map(|p| format!("{}/chain.cpp", p));
+        let info = ProjectInfo {
+            loaded: ctx.has_project(),
+            project_path: project_path.clone(),
+            chain_path,
+        };
+        log::info!("[Tauri] get_project_info returning: loaded={}, path={:?}", info.loaded, project_path);
+        info
+    }).unwrap_or_else(|| {
+        log::info!("[Tauri] get_project_info: vivid not initialized");
+        ProjectInfo {
+            loaded: false,
+            project_path: None,
+            chain_path: None,
         }
-    }
-    log::info!("[Tauri] get_project_info: VIVID_STATE not ready");
-    ProjectInfo {
-        loaded: false,
-        project_path: None,
-        chain_path: None,
-    }
+    })
 }
 
 #[tauri::command]
-fn get_compile_status() -> CompileStatusInfo {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            let status = state.ctx.compile_status();
-            return CompileStatusInfo {
-                success: status.success,
-                message: status.message,
-                error_line: status.error_line,
-                error_column: status.error_column,
-            };
+fn get_compile_status(state: tauri::State<'_, Arc<AppState>>) -> CompileStatusInfo {
+    state.with_vivid(|ctx| {
+        let status = ctx.compile_status();
+        CompileStatusInfo {
+            success: status.success,
+            message: status.message,
+            error_line: status.error_line,
+            error_column: status.error_column,
         }
-    }
-    CompileStatusInfo {
+    }).unwrap_or_else(|| CompileStatusInfo {
         success: true,
         message: None,
         error_line: None,
         error_column: None,
-    }
+    })
 }
 
 #[tauri::command]
-fn get_operators() -> Vec<OperatorInfo> {
+fn get_operators(state: tauri::State<'_, Arc<AppState>>) -> Vec<OperatorInfo> {
     log::info!("[Tauri] get_operators called");
-    let mut operators = Vec::new();
-
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            if let Some(chain) = state.ctx.chain() {
-                for op in chain.operators() {
-                    let mut inputs = Vec::new();
-                    for i in 0..op.input_count() {
-                        inputs.push(op.input_name(i));
-                    }
-
-                    operators.push(OperatorInfo {
-                        name: op.name(),
-                        type_name: op.type_name(),
-                        output_kind: format!("{:?}", op.output_kind()),
-                        bypassed: op.is_bypassed(),
-                        input_count: op.input_count(),
-                        inputs,
-                    });
+    let operators = state.with_vivid(|ctx| {
+        let mut ops = Vec::new();
+        if let Some(chain) = ctx.chain() {
+            for op in chain.operators() {
+                let mut inputs = Vec::new();
+                for i in 0..op.input_count() {
+                    inputs.push(op.input_name(i));
                 }
+                ops.push(OperatorInfo {
+                    name: op.name(),
+                    type_name: op.type_name(),
+                    output_kind: format!("{:?}", op.output_kind()),
+                    bypassed: op.is_bypassed(),
+                    input_count: op.input_count(),
+                    inputs,
+                });
             }
         }
-    }
+        ops
+    }).unwrap_or_default();
 
     log::info!("[Tauri] get_operators returning {} operators", operators.len());
     operators
 }
 
 #[tauri::command]
-fn get_operator_params(op_name: String) -> Vec<ParamInfo> {
-    let mut params = Vec::new();
-
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            if let Some(chain) = state.ctx.chain() {
-                if let Some(op) = chain.operator_by_name(&op_name) {
-                    for decl in op.params() {
-                        let value = op.get_param(&decl.name).unwrap_or([0.0; 4]);
-                        params.push(ParamInfo {
-                            name: decl.name,
-                            param_type: format!("{:?}", decl.param_type),
-                            min_val: decl.min_val,
-                            max_val: decl.max_val,
-                            value,
-                            default_val: decl.default_val,
-                            enum_labels: decl.enum_labels,
-                        });
-                    }
+fn get_operator_params(state: tauri::State<'_, Arc<AppState>>, op_name: String) -> Vec<ParamInfo> {
+    state.with_vivid(|ctx| {
+        let mut params = Vec::new();
+        if let Some(chain) = ctx.chain() {
+            if let Some(op) = chain.operator_by_name(&op_name) {
+                for decl in op.params() {
+                    let value = op.get_param(&decl.name).unwrap_or([0.0; 4]);
+                    params.push(ParamInfo {
+                        name: decl.name,
+                        param_type: format!("{:?}", decl.param_type),
+                        min_val: decl.min_val,
+                        max_val: decl.max_val,
+                        value,
+                        default_val: decl.default_val,
+                        enum_labels: decl.enum_labels,
+                    });
                 }
             }
         }
-    }
-
-    params
+        params
+    }).unwrap_or_default()
 }
 
 #[tauri::command]
-fn set_param(op_name: String, param_name: String, value: [f32; 4]) -> bool {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            if let Some(chain) = state.ctx.chain() {
-                if let Some(mut op) = chain.operator_by_name(&op_name) {
-                    return op.set_param(&param_name, &value);
-                }
+fn set_param(
+    state: tauri::State<'_, Arc<AppState>>,
+    op_name: String,
+    param_name: String,
+    value: [f32; 4],
+) -> Result<bool, String> {
+    state.with_vivid(|ctx| {
+        if let Some(chain) = ctx.chain() {
+            if let Some(mut op) = chain.operator_by_name(&op_name) {
+                return op.set_param(&param_name, &value);
             }
         }
-    }
-    false
+        false
+    }).ok_or_else(|| "Vivid not initialized".to_string())
 }
 
 #[tauri::command]
-fn reload_project() -> Result<(), String> {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.reload().map_err(|e| e.to_string())
-        } else {
-            Err("Failed to lock state".into())
+fn reload_project(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.with_vivid_mut(|ctx| {
+        ctx.reload().map_err(|e| e.to_string())
+    }).unwrap_or_else(|| Err("Vivid not initialized".into()))?;
+
+    // Emit compile status after reload
+    let status = state.with_vivid(|ctx| {
+        let s = ctx.compile_status();
+        CompileStatusPayload {
+            success: s.success,
+            message: s.message,
+            error_line: s.error_line,
+            error_column: s.error_column,
         }
-    } else {
-        Err("Vivid not initialized".into())
+    });
+    if let Some(status) = status {
+        state.emit("vivid-compile-status", status);
     }
+
+    Ok(())
 }
 
 // Input event commands - forward from webview to vivid
 #[tauri::command]
-fn input_mouse_move(x: f32, y: f32) {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.set_mouse_position(x, y);
-        }
-    }
+fn input_mouse_move(state: tauri::State<'_, Arc<AppState>>, x: f32, y: f32) {
+    state.with_vivid_mut(|ctx| {
+        ctx.set_mouse_position(x, y);
+    });
 }
 
 #[tauri::command]
-fn input_mouse_button(button: u32, pressed: bool) {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.set_mouse_button(button, pressed);
-        }
-    }
+fn input_mouse_button(state: tauri::State<'_, Arc<AppState>>, button: u32, pressed: bool) {
+    state.with_vivid_mut(|ctx| {
+        ctx.set_mouse_button(button, pressed);
+    });
 }
 
 #[tauri::command]
-fn input_scroll(dx: f32, dy: f32) {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.add_scroll(dx, dy);
-        }
-    }
+fn input_scroll(state: tauri::State<'_, Arc<AppState>>, dx: f32, dy: f32) {
+    state.with_vivid_mut(|ctx| {
+        ctx.add_scroll(dx, dy);
+    });
 }
 
 #[tauri::command]
-fn load_project(path: String) -> Result<(), String> {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.load_project(&path).map_err(|e| e.to_string())
-        } else {
-            Err("Failed to lock state".into())
+fn load_project(state: tauri::State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+    state.with_vivid_mut(|ctx| {
+        ctx.load_project(&path).map_err(|e| e.to_string())
+    }).unwrap_or_else(|| Err("Vivid not initialized".into()))?;
+
+    // Emit project loaded event
+    let info = state.with_vivid(|ctx| {
+        VividInitializedPayload {
+            success: true,
+            project_loaded: ctx.has_project(),
+            project_path: ctx.project_path(),
         }
-    } else {
-        Err("Vivid not initialized".into())
+    });
+    if let Some(info) = info {
+        state.emit("vivid-project-loaded", info);
     }
+
+    Ok(())
 }
 
 #[tauri::command]
-fn toggle_visualizer() {
+fn toggle_visualizer(state: tauri::State<'_, Arc<AppState>>) {
     log::info!("[Tauri] toggle_visualizer called");
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            let visible = state.ctx.is_visualizer_visible();
-            log::info!("[Tauri] toggle_visualizer: was {}, setting to {}", visible, !visible);
-            state.ctx.set_visualizer_visible(!visible);
-        }
-    } else {
-        log::info!("[Tauri] toggle_visualizer: VIVID_STATE not ready");
-    }
+    state.with_vivid_mut(|ctx| {
+        let visible = ctx.is_visualizer_visible();
+        log::info!("[Tauri] toggle_visualizer: was {}, setting to {}", visible, !visible);
+        ctx.set_visualizer_visible(!visible);
+    });
 }
 
 #[tauri::command]
-fn get_selected_operator() -> Option<String> {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(state) = state.lock() {
-            return state.ctx.selected_operator();
-        }
-    }
-    None
+fn get_selected_operator(state: tauri::State<'_, Arc<AppState>>) -> Option<String> {
+    state.with_vivid(|ctx| ctx.selected_operator()).flatten()
 }
 
 #[tauri::command]
-fn select_operator(name: String) {
-    if let Some(state) = VIVID_STATE.get() {
-        if let Ok(mut state) = state.lock() {
-            state.ctx.select_operator(&name);
-        }
-    }
+fn select_operator(state: tauri::State<'_, Arc<AppState>>, name: String) {
+    state.with_vivid_mut(|ctx| {
+        ctx.select_operator(&name);
+    });
+    // Emit selection event
+    state.emit("vivid-operator-selected", OperatorSelectedPayload { name: Some(name) });
+}
+
+#[tauri::command]
+fn is_vivid_ready(state: tauri::State<'_, Arc<AppState>>) -> bool {
+    state.is_initialized()
 }
 
 // =============================================================================
@@ -339,7 +423,7 @@ async fn bundle_project(options: BundleOptions) -> Result<BundleResult, String> 
         format!("{}\n{}", stdout, stderr)
     };
 
-    // Try to extract bundle path from output (look for "Bundle created: <path>")
+    // Try to extract bundle path from output
     let bundle_path = stdout
         .lines()
         .find(|line| line.contains("Bundle created:"))
@@ -353,40 +437,24 @@ async fn bundle_project(options: BundleOptions) -> Result<BundleResult, String> 
     })
 }
 
-/// Global vivid state, initialized after window is ready
-static VIVID_STATE: OnceLock<Mutex<VividState>> = OnceLock::new();
-/// Frame counter to delay initialization
-static FRAME_COUNT: AtomicU64 = AtomicU64::new(0);
-/// Whether we've tried to initialize
-static INIT_ATTEMPTED: AtomicBool = AtomicBool::new(false);
-/// Start time for render loop
-static START_TIME: OnceLock<Instant> = OnceLock::new();
+// =============================================================================
+// Window handle extraction
+// =============================================================================
 
-/// Get the NSWindow pointer from a Tauri window on macOS
 #[cfg(target_os = "macos")]
-fn get_ns_window(window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
-    // Get the tao window
-    let tao_window = window.as_ref().window();
-
-    // On macOS, we can use raw-window-handle to get the NSWindow
+fn get_window_handle(window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+    let tao_window = window.as_ref().window();
     if let Ok(handle) = tao_window.window_handle() {
         match handle.as_raw() {
             RawWindowHandle::AppKit(appkit_handle) => {
-                // ns_view is a NonNull<c_void>, convert to NSWindow
-                // The ns_view is actually the contentView of the NSWindow
-                // We need to get the window from it
                 let ns_view = appkit_handle.ns_view.as_ptr();
-
-                // Use Objective-C to get the window from the view
                 unsafe {
                     use objc2::msg_send;
                     use objc2::runtime::AnyObject;
-
                     let view: *mut AnyObject = ns_view as *mut _;
                     let window: *mut AnyObject = msg_send![view, window];
-
                     if window.is_null() {
                         None
                     } else {
@@ -401,13 +469,144 @@ fn get_ns_window(window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void>
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn get_ns_window(_window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
-    // TODO: Implement for Windows/Linux
+#[cfg(target_os = "windows")]
+fn get_window_handle(window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let tao_window = window.as_ref().window();
+    if let Ok(handle) = tao_window.window_handle() {
+        match handle.as_raw() {
+            RawWindowHandle::Win32(win32_handle) => {
+                Some(win32_handle.hwnd.get() as *mut std::ffi::c_void)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_window_handle(window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let tao_window = window.as_ref().window();
+    if let Ok(handle) = tao_window.window_handle() {
+        match handle.as_raw() {
+            RawWindowHandle::Xlib(xlib_handle) => {
+                Some(xlib_handle.window as *mut std::ffi::c_void)
+            }
+            RawWindowHandle::Xcb(xcb_handle) => {
+                Some(xcb_handle.window.get() as *mut std::ffi::c_void)
+            }
+            RawWindowHandle::Wayland(wayland_handle) => {
+                Some(wayland_handle.surface.as_ptr())
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn get_window_handle(_window: &tauri::WebviewWindow) -> Option<*mut std::ffi::c_void> {
     None
 }
 
-/// Create the native application menu
+// =============================================================================
+// Vivid initialization
+// =============================================================================
+
+/// Initialize vivid with the given window
+fn initialize_vivid(
+    state: &Arc<AppState>,
+    window: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    // Only attempt initialization once
+    if state.init_attempted.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    log::info!("Initializing vivid context...");
+
+    let window_handle = get_window_handle(window)
+        .ok_or_else(|| "Failed to get window handle".to_string())?;
+
+    // Configure asset paths BEFORE creating context
+    let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| "Failed to get parent directory".to_string())?
+        .join("vivid");
+
+    if let Err(e) = vivid::configure_asset_paths(&vivid_root) {
+        log::warn!("Failed to configure asset paths: {:?}", e);
+    } else {
+        log::info!("Configured asset paths for: {:?}", vivid_root);
+    }
+
+    // Get window size
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+    let config = vivid::ContextConfig::new(
+        size.width.max(1),
+        size.height.max(1),
+    );
+
+    // Create vivid context with window
+    let mut ctx = unsafe { vivid::Context::with_window(window_handle, config) }
+        .map_err(|e| format!("Failed to create vivid context: {:?}", e))?;
+
+    // Set vivid root for hot-reload
+    if let Err(e) = ctx.set_root_dir(&vivid_root) {
+        log::warn!("Failed to set vivid root dir: {:?}", e);
+    }
+
+    // Disable visualizer UI by default (IDE has its own UI)
+    ctx.set_visualizer_visible(false);
+
+    // Auto-load a test project for development
+    let test_project = vivid_root.join("projects/getting-started/02-operator-pipeline");
+    let project_loaded = if test_project.exists() {
+        match ctx.load_project(&test_project) {
+            Ok(_) => {
+                log::info!("Loaded test project: {:?}", test_project);
+                true
+            }
+            Err(e) => {
+                log::warn!("Failed to load test project: {:?}", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    // Store the context
+    {
+        let mut guard = state.vivid.lock().map_err(|_| "Mutex poisoned")?;
+        *guard = Some(VividContext { ctx });
+    }
+
+    log::info!("Vivid initialized successfully!");
+
+    // Emit initialization event
+    state.emit("vivid-initialized", VividInitializedPayload {
+        success: true,
+        project_loaded,
+        project_path: if project_loaded {
+            Some(test_project.to_string_lossy().to_string())
+        } else {
+            None
+        },
+    });
+
+    Ok(())
+}
+
+// =============================================================================
+// Application menu
+// =============================================================================
+
 fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     // App menu (macOS only, but we define it anyway)
     let app_menu = SubmenuBuilder::new(app, "Vivid")
@@ -500,80 +699,105 @@ fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, Box<dyn std::er
     Ok(menu)
 }
 
+// =============================================================================
+// Main entry point
+// =============================================================================
+
 fn main() {
     env_logger::init();
+
+    // Create shared application state
+    let app_state = Arc::new(AppState::default());
 
     // Create PTY manager
     let pty_manager = Arc::new(pty::PtyManager::new());
 
+    // Frame counter for deferred initialization
+    let frame_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(app_state.clone())
         .manage(pty_manager)
-        .setup(|app| {
-            log::info!("Vivid Tauri app setup starting...");
+        .setup({
+            let state = app_state.clone();
+            move |app| {
+                log::info!("Vivid Tauri app setup starting...");
 
-            // Build the application menu
-            let menu = create_app_menu(app)?;
-            app.set_menu(menu)?;
+                // Store app handle for event emission
+                if let Ok(mut guard) = state.app_handle.lock() {
+                    *guard = Some(app.handle().clone());
+                }
 
-            log::info!("Vivid Tauri app setup complete");
-            Ok(())
+                // Store start time
+                if let Ok(mut guard) = state.start_time.lock() {
+                    *guard = Some(Instant::now());
+                }
+
+                // Build the application menu
+                let menu = create_app_menu(app)?;
+                app.set_menu(menu)?;
+
+                log::info!("Vivid Tauri app setup complete");
+                Ok(())
+            }
         })
-        .on_menu_event(|app, event| {
-            log::info!("Menu event: {:?}", event.id());
-            let window = app.get_webview_window("main");
+        .on_menu_event({
+            let state = app_state.clone();
+            move |app, event| {
+                log::info!("Menu event: {:?}", event.id());
+                let window = app.get_webview_window("main");
 
-            match event.id().0.as_str() {
-                "new_project" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "new_project");
-                    }
-                }
-                "open_project" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "open_project");
-                    }
-                }
-                "open_file" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "open_file");
-                    }
-                }
-                "save" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "save");
-                    }
-                }
-                "reload" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "reload");
-                    }
-                }
-                "toggle_terminal" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "toggle_terminal");
-                    }
-                }
-                "toggle_inspector" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "toggle_inspector");
-                    }
-                }
-                "toggle_editor" => {
-                    if let Some(win) = window {
-                        let _ = win.emit("menu-action", "toggle_editor");
-                    }
-                }
-                "toggle_visualizer" => {
-                    if let Some(state) = VIVID_STATE.get() {
-                        if let Ok(mut state) = state.lock() {
-                            let visible = state.ctx.is_visualizer_visible();
-                            state.ctx.set_visualizer_visible(!visible);
+                match event.id().0.as_str() {
+                    "new_project" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "new_project");
                         }
                     }
+                    "open_project" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "open_project");
+                        }
+                    }
+                    "open_file" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "open_file");
+                        }
+                    }
+                    "save" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "save");
+                        }
+                    }
+                    "reload" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "reload");
+                        }
+                    }
+                    "toggle_terminal" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "toggle_terminal");
+                        }
+                    }
+                    "toggle_inspector" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "toggle_inspector");
+                        }
+                    }
+                    "toggle_editor" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "toggle_editor");
+                        }
+                    }
+                    "toggle_visualizer" => {
+                        state.with_vivid_mut(|ctx| {
+                            let visible = ctx.is_visualizer_visible();
+                            ctx.set_visualizer_visible(!visible);
+                        });
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -587,6 +811,8 @@ fn main() {
             file_ops::write_file,
             file_ops::get_file_name,
             file_ops::create_project,
+            file_ops::get_home_dir,
+            file_ops::get_vivid_executable_path,
             // Vivid state queries
             get_project_info,
             get_compile_status,
@@ -602,106 +828,60 @@ fn main() {
             toggle_visualizer,
             get_selected_operator,
             select_operator,
+            is_vivid_ready,
             bundle_project,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            match event {
-                RunEvent::Ready => {
-                    log::info!("RunEvent::Ready");
-                    let _ = START_TIME.set(Instant::now());
-                }
-                // MainEventsCleared fires after each batch of events - good for periodic work
-                RunEvent::MainEventsCleared => {
-                    let frame = FRAME_COUNT.fetch_add(1, Ordering::SeqCst);
+        .run({
+            let state = app_state.clone();
+            let frame_counter = frame_count.clone();
+            move |app_handle, event| {
+                match event {
+                    RunEvent::Ready => {
+                        log::info!("RunEvent::Ready");
+                    }
+                    RunEvent::MainEventsCleared => {
+                        let frame = frame_counter.fetch_add(1, Ordering::SeqCst);
 
-                    // Wait ~30 frames (about 500ms at 60fps) before trying to init vivid
-                    // This ensures the Metal layer is ready on macOS
-                    if frame == 30 && !INIT_ATTEMPTED.swap(true, Ordering::SeqCst) {
-                        log::info!("Initializing vivid on main thread");
-
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            if let Some(ns_window) = get_ns_window(&window) {
-                                // Configure asset paths BEFORE creating context
-                                let vivid_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                                    .parent().unwrap()  // vivid-ide
-                                    .join("vivid");
-
-                                if let Err(e) = vivid::configure_asset_paths(&vivid_root) {
-                                    log::warn!("Failed to configure asset paths: {:?}", e);
-                                } else {
-                                    log::info!("Configured asset paths for: {:?}", vivid_root);
+                        // Wait ~30 frames (about 500ms at 60fps) before trying to init vivid
+                        // This ensures the window/Metal layer is ready
+                        if frame == 30 && !state.init_attempted.load(Ordering::SeqCst) {
+                            log::info!("Attempting vivid initialization on frame {}", frame);
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                if let Err(e) = initialize_vivid(&state, &window) {
+                                    log::error!("Failed to initialize vivid: {}", e);
+                                    state.emit("vivid-initialized", VividInitializedPayload {
+                                        success: false,
+                                        project_loaded: false,
+                                        project_path: None,
+                                    });
                                 }
-
-                                // Get window size
-                                let size = window.inner_size().unwrap_or_default();
-                                let config = vivid::ContextConfig::new(
-                                    size.width.max(1),
-                                    size.height.max(1),
-                                );
-
-                                // Create vivid context with window
-                                match unsafe { vivid::Context::with_window(ns_window, config) } {
-                                    Ok(mut ctx) => {
-                                        // Set vivid root for hot-reload
-                                        if let Err(e) = ctx.set_root_dir(&vivid_root) {
-                                            log::warn!("Failed to set vivid root dir: {:?}", e);
-                                        }
-
-                                        // Disable visualizer UI by default (IDE has its own UI)
-                                        ctx.set_visualizer_visible(false);
-
-                                        // Auto-load a test project for development
-                                        let test_project = vivid_root.join("projects/getting-started/02-operator-pipeline");
-
-                                        if test_project.exists() {
-                                            match ctx.load_project(&test_project) {
-                                                Ok(_) => log::info!("Loaded test project: {:?}", test_project),
-                                                Err(e) => log::warn!("Failed to load test project: {:?}", e),
-                                            }
-                                        }
-
-                                        let state = VividState { ctx };
-                                        if VIVID_STATE.set(Mutex::new(state)).is_ok() {
-                                            log::info!("Vivid initialized successfully on main thread!");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to create vivid context: {:?}", e);
-                                    }
-                                }
-                            } else {
-                                log::error!("Failed to get NSWindow handle");
                             }
                         }
-                    }
 
-                    // Render if vivid is initialized
-                    if let Some(state) = VIVID_STATE.get() {
-                        if let Ok(state) = state.lock() {
-                            if let Err(e) = state.ctx.render_frame() {
+                        // Render if vivid is initialized
+                        state.with_vivid(|ctx| {
+                            if let Err(e) = ctx.render_frame() {
                                 log::error!("Render error: {:?}", e);
                             }
-                        }
+                        });
                     }
-                }
-                RunEvent::WindowEvent {
-                    label: _,
-                    event: WindowEvent::Resized(size),
-                    ..
-                } => {
-                    if size.width > 0 && size.height > 0 {
-                        if let Some(state) = VIVID_STATE.get() {
-                            if let Ok(mut state) = state.lock() {
-                                if let Err(e) = state.ctx.resize_surface(size.width, size.height) {
+                    RunEvent::WindowEvent {
+                        label: _,
+                        event: WindowEvent::Resized(size),
+                        ..
+                    } => {
+                        if size.width > 0 && size.height > 0 {
+                            state.with_vivid_mut(|ctx| {
+                                if let Err(e) = ctx.resize_surface(size.width, size.height) {
                                     log::error!("Resize error: {:?}", e);
                                 }
-                            }
+                            });
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         });
 }

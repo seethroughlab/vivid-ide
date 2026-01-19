@@ -2,6 +2,45 @@ use std::fs;
 use std::path::PathBuf;
 
 #[tauri::command]
+pub fn get_home_dir() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Could not determine home directory".to_string())
+}
+
+#[tauri::command]
+pub fn get_vivid_executable_path() -> Result<String, String> {
+    // Try to find vivid executable in various locations
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    let possible_paths: Vec<PathBuf> = vec![
+        // In bundled app - same directory or Resources
+        exe_dir.clone().map(|d| d.join("vivid")),
+        exe_dir.clone().map(|d| d.join("../Resources/vivid")),
+        // Development paths
+        exe_dir.clone().map(|d| d.join("../../../vivid/build/bin/vivid")),
+        exe_dir.map(|d| d.join("../../../../vivid/build/bin/vivid")),
+        // System paths
+        Some(PathBuf::from("/usr/local/bin/vivid")),
+        Some(PathBuf::from("/opt/homebrew/bin/vivid")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    for path in &possible_paths {
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    // If not found, return "vivid" and hope it's in PATH
+    Ok("vivid".to_string())
+}
+
+#[tauri::command]
 pub async fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
 }
