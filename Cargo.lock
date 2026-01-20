@@ -4624,8 +4624,10 @@ version = "0.1.0"
 name = "vivid-tauri"
 version = "0.1.0"
 dependencies = [
+ "core-foundation 0.10.1",
  "dirs",
  "env_logger",
+ "libc",
  "log",
  "objc2",
  "objc2-app-kit",

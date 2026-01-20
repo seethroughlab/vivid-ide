@@ -9,6 +9,7 @@ import { initInspector } from "./ui/inspector";
 import { initLayout } from "./ui/layout";
 import { initMenu, setupWindowDragging, updateProjectTitle } from "./ui/menu";
 import { initMcpSetup } from "./ui/mcp-setup";
+import { initConsole } from "./ui/console";
 import {
   setupInputForwarding,
   setupKeyboardShortcuts,
@@ -36,6 +37,9 @@ async function init(): Promise<void> {
 
   // Initialize inspector (depends on store)
   initInspector();
+
+  // Initialize console panel
+  initConsole();
 
   // Setup event handlers
   setupInputForwarding();

@@ -2,9 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod file_ops;
+mod output_capture;
 mod pty;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Emitter};
@@ -35,6 +36,10 @@ pub struct AppState {
     init_attempted: AtomicBool,
     /// Start time for performance tracking
     start_time: Mutex<Option<Instant>>,
+    /// Flag to signal render thread to stop
+    render_running: AtomicBool,
+    /// Frame counter for render timing - incremented by timer thread, decremented after render
+    render_pending: AtomicU64,
 }
 
 impl Default for AppState {
@@ -44,6 +49,8 @@ impl Default for AppState {
             app_handle: Mutex::new(None),
             init_attempted: AtomicBool::new(false),
             start_time: Mutex::new(None),
+            render_running: AtomicBool::new(false),
+            render_pending: AtomicU64::new(0),
         }
     }
 }
@@ -60,6 +67,15 @@ impl AppState {
         F: FnOnce(&vivid::Context) -> T,
     {
         let guard = self.vivid.lock().ok()?;
+        guard.as_ref().map(|v| f(&v.ctx))
+    }
+
+    /// Try to execute a function with vivid context, returns None if lock is busy
+    fn try_with_vivid<T, F>(&self, f: F) -> Option<T>
+    where
+        F: FnOnce(&vivid::Context) -> T,
+    {
+        let guard = self.vivid.try_lock().ok()?;
         guard.as_ref().map(|v| f(&v.ctx))
     }
 
@@ -730,6 +746,9 @@ fn main() {
                     *guard = Some(app.handle().clone());
                 }
 
+                // Capture stdout/stderr and forward to frontend
+                output_capture::start_capture(app.handle().clone());
+
                 // Store start time
                 if let Ok(mut guard) = state.start_time.lock() {
                     *guard = Some(Instant::now());
@@ -738,6 +757,27 @@ fn main() {
                 // Build the application menu
                 let menu = create_app_menu(app)?;
                 app.set_menu(menu)?;
+
+                // Start timer thread for continuous rendering
+                // This wakes the main event loop frequently - actual frame rate is
+                // determined by vsync/GPU, not this timer. We wake at ~240Hz to support
+                // high refresh rate displays (120Hz, 144Hz, etc.)
+                let timer_state = state.clone();
+                let timer_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    timer_state.render_running.store(true, Ordering::SeqCst);
+                    let wake_interval = std::time::Duration::from_micros(4166); // ~240Hz wake rate
+
+                    while timer_state.render_running.load(Ordering::SeqCst) {
+                        // Emit a render-tick event to wake the main event loop
+                        // This is safe because we're just emitting an event, not rendering
+                        if let Some(window) = timer_handle.get_webview_window("main") {
+                            let _ = window.emit("render-tick", ());
+                        }
+                        std::thread::sleep(wake_interval);
+                    }
+                    log::info!("Render timer thread stopped");
+                });
 
                 log::info!("Vivid Tauri app setup complete");
                 Ok(())
@@ -860,12 +900,15 @@ fn main() {
                             }
                         }
 
-                        // Render if vivid is initialized
-                        state.with_vivid(|ctx| {
-                            if let Err(e) = ctx.render_frame() {
-                                log::error!("Render error: {:?}", e);
+                        // Render frame on main thread
+                        // Use try_lock to avoid blocking during project loading
+                        if let Ok(guard) = state.vivid.try_lock() {
+                            if let Some(ref vivid_ctx) = *guard {
+                                if let Err(e) = vivid_ctx.ctx.render_frame() {
+                                    log::error!("Render error: {:?}", e);
+                                }
                             }
-                        });
+                        }
                     }
                     RunEvent::WindowEvent {
                         label: _,
@@ -879,6 +922,10 @@ fn main() {
                                 }
                             });
                         }
+                    }
+                    RunEvent::ExitRequested { .. } => {
+                        // Stop the render thread
+                        state.render_running.store(false, Ordering::SeqCst);
                     }
                     _ => {}
                 }

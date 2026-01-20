@@ -31,11 +31,16 @@ vivid = { path = "../crates/vivid" }
 # For getting native window handle
 raw-window-handle = "0.6"
 
+# Unix-specific dependencies for stdout/stderr capture
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # macOS-specific dependencies for NSWindow access
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSView"] }
 objc2-foundation = "0.3"
+core-foundation = "0.10"
 
 [features]
 default = ["custom-protocol"]

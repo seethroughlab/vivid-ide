@@ -27,7 +27,7 @@
           </div>
         </div>
 
-        <!-- Center area: Editor overlay + Preview -->
+        <!-- Center area: Editor overlay + Preview + Console -->
         <div class="center-area">
           <!-- Editor drops down from top -->
           <div class="editor-overlay" id="editor-panel">
@@ -46,6 +46,20 @@
 
           <!-- Preview area fills remaining space (transparent for wgpu) -->
           <div class="preview-area" id="preview-area"></div>
+
+          <!-- Console panel at bottom -->
+          <div class="console-panel" id="console-panel">
+            <div class="panel-header">
+              <span>Output</span>
+              <div class="console-actions">
+                <button class="console-btn" id="clear-console" title="Clear">Clear</button>
+                <button class="panel-toggle" id="toggle-console">−</button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <div id="console-output" class="console-output"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Right panel: Parameters (Inspector) -->

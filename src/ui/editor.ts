@@ -333,6 +333,13 @@ export function jumpToLine(line: number, column: number): void {
   }
 }
 
+/**
+ * Go to a specific line (alias for jumpToLine with column 1)
+ */
+export function goToLine(line: number): void {
+  jumpToLine(line, 1);
+}
+
 // =============================================================================
 // UI Updates
 // =============================================================================

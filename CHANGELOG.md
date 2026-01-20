@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-01-19
+
+### Fixed
+
+- **Video loop crash** - Fixed crash when video loops by preserving AVAsset during seek operations and adding RenderLock to prevent GPU state conflicts
+- **Choppy rendering** - Added 240Hz timer thread to continuously wake the event loop, supporting high refresh rate displays
+- **Console output** - Restored stdout/stderr capture that forwards vivid output to the IDE console panel
+- **Video initialization** - Optimized AVPlayer timeout (300ms) for faster fallback to AVAssetReader decoder in Tauri environment
+
+### Changed
+
+- Render loop now wakes at 240Hz instead of relying solely on system events, ensuring smooth animation regardless of user input
+- AVFDecoder now uses `cleanupReader()` helper to safely reset video reader without destroying the asset
+
 ## [0.1.0-alpha.1] - 2026-01-19
 
 *Initial release - Tauri-based IDE for Vivid creative coding*
@@ -73,5 +87,6 @@ src-tauri/            Rust backend
     vivid/            Safe Rust wrapper
 ```
 
-[Unreleased]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/seethroughlab/vivid-ide/releases/tag/v0.1.0-alpha.1

@@ -51,7 +51,4 @@ base64 -i certificate.p12 | pbcopy
 - [ ] Windows code signing
 - [ ] Linux .deb/.rpm packages
 
-
-
-
-[ ] dev/plans/REFACTOR.md
+[ ] opening /Users/jeff/Developer/vivid/modules/vivid-core/examples/color-grading freezes the ide
