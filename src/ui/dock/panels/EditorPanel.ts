@@ -1,8 +1,7 @@
 // =============================================================================
-// Editor Panel Renderer for Dockview
+// Editor Panel for dock-spawn-ts
 // =============================================================================
 
-import type { IContentRenderer, GroupPanelPartInitParameters } from "dockview-core";
 import * as monaco from "monaco-editor";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { store } from "../../../state/store";
@@ -94,111 +93,89 @@ function registerWGSLLanguage(): void {
   });
 }
 
-export class EditorPanelRenderer implements IContentRenderer {
-  private _element: HTMLElement;
-  private resizeObserver: ResizeObserver | null = null;
+/**
+ * Create the editor panel element
+ */
+export function createEditorPanel(): HTMLElement {
+  const element = document.createElement("div");
+  element.className = "editor-panel-content";
 
-  constructor() {
-    this._element = document.createElement("div");
-    this._element.className = "editor-panel-content";
+  const editorContainer = document.createElement("div");
+  editorContainer.id = "editor";
+  element.appendChild(editorContainer);
 
-    const editorContainer = document.createElement("div");
-    editorContainer.id = "editor";
-    this._element.appendChild(editorContainer);
-  }
+  // Initialize editor when element is attached to DOM
+  setTimeout(() => {
+    initEditor(editorContainer);
+  }, 0);
 
-  get element(): HTMLElement {
-    return this._element;
-  }
+  // Set up resize handling with ResizeObserver
+  const resizeObserver = new ResizeObserver(() => {
+    editor?.layout();
+  });
+  resizeObserver.observe(element);
 
-  init(params: GroupPanelPartInitParameters): void {
-    // Initialize editor when panel is ready
-    this.initEditor();
+  return element;
+}
 
-    // Handle resize
-    params.api.onDidDimensionsChange(() => {
-      editor?.layout();
-    });
+function initEditor(container: HTMLElement): void {
+  if (editor) return; // Already initialized
 
-    // ResizeObserver for additional resize handling
-    this.resizeObserver = new ResizeObserver(() => {
-      editor?.layout();
-    });
-    this.resizeObserver.observe(this._element);
-  }
+  // Register WGSL language
+  registerWGSLLanguage();
 
-  private initEditor(): void {
-    const container = this._element.querySelector("#editor") as HTMLElement;
-    if (!container) {
-      console.error("[EditorPanel] Container not found");
-      return;
+  // Define dark theme
+  monaco.editor.defineTheme("vivid-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "6A9955" },
+      { token: "keyword", foreground: "C586C0" },
+      { token: "type", foreground: "4EC9B0" },
+      { token: "predefined", foreground: "DCDCAA" },
+      { token: "annotation", foreground: "D7BA7D" },
+      { token: "number", foreground: "B5CEA8" },
+      { token: "string", foreground: "CE9178" },
+    ],
+    colors: {
+      "editor.background": "#00000000",
+      "editor.lineHighlightBackground": "#ffffff10",
+      "editorLineNumber.foreground": "#6e6e6e",
+      "editorCursor.foreground": "#6366f1",
+      "editor.selectionBackground": "#6366f133",
     }
+  });
 
-    // Register WGSL language
-    registerWGSLLanguage();
+  // Create editor
+  editor = monaco.editor.create(container, {
+    value: "// Open a file to edit\n// Supported: .cpp, .h, .hpp, .wgsl\n",
+    language: "cpp",
+    theme: "vivid-dark",
+    fontFamily: '"SF Mono", "Monaco", "Consolas", monospace',
+    fontSize: 13,
+    lineHeight: 20,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    padding: { top: 8, bottom: 8 },
+    renderLineHighlight: "line",
+    cursorBlinking: "smooth",
+    cursorSmoothCaretAnimation: "on",
+  });
 
-    // Define dark theme
-    monaco.editor.defineTheme("vivid-dark", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "comment", foreground: "6A9955" },
-        { token: "keyword", foreground: "C586C0" },
-        { token: "type", foreground: "4EC9B0" },
-        { token: "predefined", foreground: "DCDCAA" },
-        { token: "annotation", foreground: "D7BA7D" },
-        { token: "number", foreground: "B5CEA8" },
-        { token: "string", foreground: "CE9178" },
-      ],
-      colors: {
-        "editor.background": "#00000000",
-        "editor.lineHighlightBackground": "#ffffff10",
-        "editorLineNumber.foreground": "#6e6e6e",
-        "editorCursor.foreground": "#6366f1",
-        "editor.selectionBackground": "#6366f133",
-      }
-    });
-
-    // Create editor
-    editor = monaco.editor.create(container, {
-      value: "// Open a file to edit\n// Supported: .cpp, .h, .hpp, .wgsl\n",
-      language: "cpp",
-      theme: "vivid-dark",
-      fontFamily: '"SF Mono", "Monaco", "Consolas", monospace',
-      fontSize: 13,
-      lineHeight: 20,
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      automaticLayout: true,
-      padding: { top: 8, bottom: 8 },
-      renderLineHighlight: "line",
-      cursorBlinking: "smooth",
-      cursorSmoothCaretAnimation: "on",
-    });
-
-    // Track modifications
-    editor.onDidChangeModelContent(() => {
-      const state = store.get();
-      if (!state.isModified) {
-        store.setModified(true);
-        updateEditorUI();
-      }
-    });
-
-    // Keyboard shortcut: Cmd/Ctrl+S to save
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
-
-    console.log("[EditorPanel] Initialized");
-  }
-
-  dispose(): void {
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
-      this.resizeObserver = null;
+  // Track modifications
+  editor.onDidChangeModelContent(() => {
+    const state = store.get();
+    if (!state.isModified) {
+      store.setModified(true);
+      updateEditorUI();
     }
-    editor?.dispose();
-    editor = null;
-  }
+  });
+
+  // Keyboard shortcut: Cmd/Ctrl+S to save
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
+
+  console.log("[EditorPanel] Initialized");
 }
 
 // =============================================================================

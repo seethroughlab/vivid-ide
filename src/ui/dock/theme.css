@@ -1,45 +1,196 @@
 /* =============================================================================
-   Vivid Dockview Theme
-   Minimal overrides on top of dockview-theme-dark
+   Vivid dock-spawn-ts Theme
+   Dark theme styling for dock-spawn-ts panels
 ============================================================================= */
 
-/* Override dark theme colors with our palette */
-.dockview-theme-dark.dockview-theme-vivid {
-  --dv-background-color: rgba(20, 20, 25, 0.85);
-  --dv-tabs-and-actions-container-background-color: rgba(30, 30, 35, 0.9);
-  --dv-separator-border: rgba(100, 100, 120, 0.3);
-  --dv-active-sash-color: #6366f1;
-  --dv-group-view-background-color: rgba(20, 20, 25, 0.85);
-  --dv-activegroup-visiblepanel-tab-background-color: rgba(40, 40, 50, 0.9);
-  --dv-activegroup-hiddenpanel-tab-background-color: rgba(25, 25, 30, 0.8);
-  --dv-inactivegroup-visiblepanel-tab-background-color: rgba(35, 35, 40, 0.8);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: rgba(25, 25, 30, 0.8);
-  --dv-activegroup-visiblepanel-tab-color: rgba(255, 255, 255, 0.95);
-  --dv-activegroup-hiddenpanel-tab-color: rgba(180, 180, 200, 0.7);
-  --dv-inactivegroup-visiblepanel-tab-color: rgba(180, 180, 200, 0.8);
-  --dv-inactivegroup-hiddenpanel-tab-color: rgba(180, 180, 200, 0.6);
-  --dv-drag-over-background-color: rgba(99, 102, 241, 0.3);
-  --dv-drag-over-border-color: #6366f1;
+/* =============================================================================
+   Main Container - Transparent to show wgpu rendering behind
+   pointer-events: none allows clicks to pass through to wgpu
+============================================================================= */
+
+.dock-container {
+  background: transparent !important;
 }
 
-/* Make the container transparent for wgpu rendering behind */
-.dockview-theme-dark.dockview-theme-vivid {
-  background: transparent;
+.dock-container-fill {
+  background: transparent !important;
+  pointer-events: none;
 }
 
-/* Content area styling */
-.dockview-theme-dark.dockview-theme-vivid .dv-content-container {
-  background: rgba(20, 20, 25, 0.85);
+.document-manager {
+  background: transparent !important;
+  pointer-events: none;
+}
+
+/* Splitter containers should also be transparent */
+.splitter-container-horizontal,
+.splitter-container-vertical {
+  background: transparent !important;
 }
 
 /* =============================================================================
-   Transparent Preview Panel Styles
-   Uses :has() selector to target parent containers of #preview-area
+   Panel Title Bar
 ============================================================================= */
 
-.dockview-theme-dark.dockview-theme-vivid .dv-groupview:has(#preview-area),
-.dockview-theme-dark.dockview-theme-vivid .dv-content-container:has(#preview-area) {
-  background: transparent !important;
+.panel-titlebar {
+  background: rgba(30, 30, 35, 0.95);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(100, 100, 120, 0.2);
+  pointer-events: auto;
+}
+
+.panel-titlebar-text {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.panel-titlebar-button-close::after {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+}
+
+.panel-titlebar-button-close:hover::after {
+  color: rgba(255, 100, 100, 0.9);
+}
+
+/* =============================================================================
+   Panel Content - Transparent by default, panels set their own backgrounds
+   Re-enable pointer-events for actual panel content
+============================================================================= */
+
+.panel-content {
+  background: transparent;
+  pointer-events: none;
+}
+
+.panel-content-wrapper {
+  background: transparent;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   Splitter Bars - must be interactive for resizing
+============================================================================= */
+
+.splitbar-horizontal,
+.splitbar-vertical {
+  background: rgba(60, 60, 70, 0.5);
+  pointer-events: auto;
+}
+
+.splitbar-horizontal:hover,
+.splitbar-vertical:hover {
+  background: rgba(99, 102, 241, 0.6);
+}
+
+.splitbar-horizontal-ghoust,
+.splitbar-vertical-ghoust {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+/* =============================================================================
+   Tab Host
+============================================================================= */
+
+.dockspan-tab-host {
+  background: transparent;
+  pointer-events: none;
+}
+
+.dockspan-tab-content {
+  background: transparent;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   Tab Handles - must be interactive for tab switching and dragging
+============================================================================= */
+
+.dockspan-tab-handle {
+  background: rgba(35, 35, 40, 0.9);
+  color: rgba(180, 180, 200, 0.7);
+  border-right: 1px solid rgba(60, 60, 70, 0.5);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.dockspan-tab-handle:hover {
+  background: rgba(45, 45, 55, 0.9);
+  color: rgba(220, 220, 240, 0.9);
+}
+
+.dockspan-tab-handle-selected {
+  background: rgba(50, 50, 60, 0.95);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.dockspan-tab-handle-text {
+  color: inherit;
+}
+
+.dockspan-tab-handle-close-button::after {
+  color: rgba(180, 180, 200, 0.5);
+  font-size: 12px;
+}
+
+.dockspan-tab-handle-close-button:hover::after {
+  color: rgba(255, 100, 100, 0.9);
+}
+
+.dockspan-tab-handle-list-container {
+  background: rgba(25, 25, 30, 0.95);
+  border-bottom: 1px solid rgba(60, 60, 70, 0.5);
+  pointer-events: auto;
+}
+
+.dockspan-tab-handle-content-seperator {
+  background: rgba(99, 102, 241, 0.8);
+}
+
+/* =============================================================================
+   Dock Wheel (drag indicator)
+============================================================================= */
+
+.dock-wheel-panel-preview {
+  background-color: rgba(99, 102, 241, 0.3);
+  border: 2px solid rgba(99, 102, 241, 0.7);
+}
+
+/* =============================================================================
+   Floating Dialogs
+============================================================================= */
+
+.dialog-floating {
+  background: rgba(30, 30, 35, 0.98);
+  border: 1px solid rgba(80, 80, 100, 0.5);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* =============================================================================
+   Resize Handles
+============================================================================= */
+
+.resize-handle,
+.resize-handle-corner {
+  background: transparent;
+}
+
+/* =============================================================================
+   Context Menu
+============================================================================= */
+
+.dockspab-tab-handle-context-menu {
+  background: rgba(35, 35, 40, 0.98);
+  border: 1px solid rgba(80, 80, 100, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.dockspab-tab-handle-context-menu > div:hover {
+  background: rgba(99, 102, 241, 0.3);
 }
 
 /* =============================================================================
@@ -49,16 +200,20 @@
 .terminal-panel-content {
   height: 100%;
   overflow: hidden;
+  background: rgba(20, 20, 25, 0.9);
+  pointer-events: auto;
 }
 
 .terminal-panel-content #terminal {
   height: 100%;
-  background: rgba(0, 0, 0, 0.3);
+  background: transparent;
 }
 
 .editor-panel-content {
   height: 100%;
   overflow: hidden;
+  background: rgba(20, 20, 25, 0.9);
+  pointer-events: auto;
 }
 
 .editor-panel-content #editor {
@@ -70,19 +225,183 @@
   padding: 12px;
   height: 100%;
   overflow-y: auto;
+  background: rgba(20, 20, 25, 0.9);
+  pointer-events: auto;
 }
 
 .console-panel-content {
   height: 100%;
   overflow: hidden;
+  background: rgba(20, 20, 25, 0.9);
+  pointer-events: auto;
 }
 
 .console-panel-content .console-output {
   height: 100%;
   padding: 8px 12px;
+  overflow-y: auto;
 }
 
-.preview-panel-content {
-  background: transparent !important;
-  height: 100%;
+/* =============================================================================
+   Inspector Panel Styles
+============================================================================= */
+
+.inspector-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: rgba(180, 180, 200, 0.6);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.operator-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.operator-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(40, 40, 50, 0.5);
+}
+
+.operator-item:hover {
+  background: rgba(50, 50, 60, 0.7);
+}
+
+.operator-item.selected {
+  background: rgba(99, 102, 241, 0.3);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+}
+
+.op-name {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.op-type {
+  font-size: 11px;
+  color: rgba(180, 180, 200, 0.5);
+}
+
+.param-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.no-params {
+  font-size: 12px;
+  color: rgba(180, 180, 200, 0.5);
+  font-style: italic;
+}
+
+.param-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.param-control label {
+  font-size: 11px;
+  color: rgba(180, 180, 200, 0.7);
+}
+
+.param-control input[type="range"] {
+  width: 100%;
+  accent-color: #6366f1;
+}
+
+.param-control input[type="checkbox"] {
+  accent-color: #6366f1;
+}
+
+.param-control select {
+  background: rgba(40, 40, 50, 0.8);
+  border: 1px solid rgba(80, 80, 100, 0.5);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.param-value {
+  font-size: 11px;
+  color: rgba(180, 180, 200, 0.7);
+  min-width: 40px;
+  text-align: right;
+}
+
+.vec-component {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vec-component span:first-child {
+  font-size: 10px;
+  color: rgba(180, 180, 200, 0.5);
+  min-width: 12px;
+}
+
+/* =============================================================================
+   Console Panel Styles
+============================================================================= */
+
+.console-line {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-family: "SF Mono", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.console-line.info {
+  color: rgba(200, 200, 220, 0.9);
+}
+
+.console-line.success {
+  color: #4ade80;
+}
+
+.console-line.warning {
+  color: #facc15;
+}
+
+.console-line.error {
+  color: #f87171;
+}
+
+.console-timestamp {
+  color: rgba(150, 150, 170, 0.5);
+  font-size: 10px;
+}
+
+.console-message {
+  flex: 1;
+}
+
+.console-location {
+  color: #60a5fa;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.console-location:hover {
+  color: #93c5fd;
+}
+
+.console-empty {
+  color: rgba(150, 150, 170, 0.5);
+  font-style: italic;
 }

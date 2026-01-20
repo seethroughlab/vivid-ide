@@ -1,8 +1,7 @@
 // =============================================================================
-// Console Panel Renderer for Dockview
+// Console Panel for dock-spawn-ts
 // =============================================================================
 
-import type { IContentRenderer, GroupPanelPartInitParameters } from "dockview-core";
 import { listen } from "../../../api/tauri";
 import { store } from "../../../state/store";
 import type { AppState } from "../../../types";
@@ -24,69 +23,58 @@ interface ConsoleMessage {
 const messages: ConsoleMessage[] = [];
 let consoleOutput: HTMLElement | null = null;
 
-export class ConsolePanelRenderer implements IContentRenderer {
-  private _element: HTMLElement;
-  private unsubscriber: (() => void) | null = null;
+/**
+ * Create the console panel element
+ */
+export function createConsolePanel(): HTMLElement {
+  const element = document.createElement("div");
+  element.className = "console-panel-content";
+  element.innerHTML = `
+    <div id="console-output" class="console-output"></div>
+  `;
 
-  constructor() {
-    this._element = document.createElement("div");
-    this._element.className = "console-panel-content";
-    this._element.innerHTML = `
-      <div id="console-output" class="console-output"></div>
-    `;
+  consoleOutput = element.querySelector("#console-output");
+  if (!consoleOutput) {
+    console.error("[ConsolePanel] console-output element not found");
+    return element;
   }
 
-  get element(): HTMLElement {
-    return this._element;
-  }
+  // Show initial message
+  logInfo("Console ready");
 
-  init(_params: GroupPanelPartInitParameters): void {
-    consoleOutput = this._element.querySelector("#console-output");
-    if (!consoleOutput) return;
-
-    // Show initial message
-    logInfo("Console ready");
-
-    // Listen for stdout/stderr output from vivid
-    listen<OutputPayload>("vivid-output", (payload) => {
-      const { stream, text } = payload;
-      if (stream === "stderr") {
-        logWarning(text);
-      } else {
-        logInfo(text);
-      }
-    });
-
-    // Subscribe to compile status changes
-    let prevCompileSuccess: boolean | null = null;
-    this.unsubscriber = store.subscribe((state: AppState) => {
-      const status = state.compileStatus;
-      if (status.success !== prevCompileSuccess) {
-        if (prevCompileSuccess !== null) {
-          if (status.success) {
-            logSuccess("Compilation successful");
-          } else if (status.message) {
-            logError(status.message, {
-              file: state.chainPath || "chain.cpp",
-              line: status.error_line || 0,
-              column: status.error_column || undefined,
-            });
-          }
-        }
-        prevCompileSuccess = status.success;
-      }
-    });
-
-    console.log("[ConsolePanel] Initialized");
-  }
-
-  dispose(): void {
-    if (this.unsubscriber) {
-      this.unsubscriber();
-      this.unsubscriber = null;
+  // Listen for stdout/stderr output from vivid
+  listen<OutputPayload>("vivid-output", (payload) => {
+    const { stream, text } = payload;
+    if (stream === "stderr") {
+      logWarning(text);
+    } else {
+      logInfo(text);
     }
-    consoleOutput = null;
-  }
+  });
+
+  // Subscribe to compile status changes
+  let prevCompileSuccess: boolean | null = null;
+  store.subscribe((state: AppState) => {
+    const status = state.compileStatus;
+    if (status.success !== prevCompileSuccess) {
+      if (prevCompileSuccess !== null) {
+        if (status.success) {
+          logSuccess("Compilation successful");
+        } else if (status.message) {
+          logError(status.message, {
+            file: state.chainPath || "chain.cpp",
+            line: status.error_line || 0,
+            column: status.error_column || undefined,
+          });
+        }
+      }
+      prevCompileSuccess = status.success;
+    }
+  });
+
+  console.log("[ConsolePanel] Initialized");
+
+  return element;
 }
 
 // =============================================================================

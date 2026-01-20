@@ -23,24 +23,42 @@ export function setupInputForwarding(): void {
     }
   }, true); // Use capture phase to log before dockview handles it
 
-  // Mouse move - forward position for hover effects (only for preview area)
+  // Helper to check if click should be forwarded to vivid
+  // Forward if: dock container (transparent areas), or main content area
+  function shouldForwardToVivid(target: HTMLElement): boolean {
+    // Clicking on dock container itself (transparent background)
+    if (target.closest("#dock-container") === target) return true;
+
+    // Clicking on main-content area directly
+    if (target.closest(".main-content") === target) return true;
+
+    // Don't forward if clicking on actual panel content
+    if (target.closest(".terminal-panel-content")) return false;
+    if (target.closest(".editor-panel-content")) return false;
+    if (target.closest(".inspector-panel-content")) return false;
+    if (target.closest(".console-panel-content")) return false;
+
+    // Don't forward if clicking on dock UI elements
+    if (target.closest(".panel-titlebar")) return false;
+    if (target.closest(".dockspan-tab-handle")) return false;
+    if (target.closest(".splitbar-horizontal, .splitbar-vertical")) return false;
+
+    // Forward by default for transparent areas
+    return true;
+  }
+
+  // Mouse move - forward position for hover effects
   document.addEventListener("mousemove", (e) => {
     const target = e.target as HTMLElement;
-    const previewArea = target.closest("#preview-area");
-
-    if (previewArea) {
+    if (shouldForwardToVivid(target)) {
       vivid.inputMouseMove(e.clientX, e.clientY).catch(() => {});
     }
   });
 
   // Mouse buttons - forward for click/drag interactions
-  // Only forward clicks on the preview area to vivid
   document.addEventListener("mousedown", (e) => {
     const target = e.target as HTMLElement;
-
-    // Only forward if clicking directly on preview area
-    const previewArea = target.closest("#preview-area");
-    if (previewArea) {
+    if (shouldForwardToVivid(target)) {
       vivid.inputMouseButton(e.button, true).catch(() => {});
     }
   });
@@ -50,12 +68,10 @@ export function setupInputForwarding(): void {
     vivid.inputMouseButton(e.button, false).catch(() => {});
   });
 
-  // Scroll/wheel - forward for zooming and panning (only for preview area)
+  // Scroll/wheel - forward for zooming and panning
   document.addEventListener("wheel", (e) => {
     const target = e.target as HTMLElement;
-    const previewArea = target.closest("#preview-area");
-
-    if (previewArea) {
+    if (shouldForwardToVivid(target)) {
       e.preventDefault();
       vivid.inputScroll(e.deltaX, e.deltaY).catch(() => {});
     }
@@ -110,20 +126,14 @@ export function setupKeyboardShortcuts(): void {
       dockManager.showPanel("editor");
     }
 
-    // Cmd+3 / Ctrl+3 - show/restore preview panel
+    // Cmd+3 / Ctrl+3 - show/restore output/console panel
     if ((e.metaKey || e.ctrlKey) && e.key === "3") {
-      e.preventDefault();
-      dockManager.showPanel("preview");
-    }
-
-    // Cmd+4 / Ctrl+4 - show/restore output/console panel
-    if ((e.metaKey || e.ctrlKey) && e.key === "4") {
       e.preventDefault();
       dockManager.showPanel("console");
     }
 
-    // Cmd+5 / Ctrl+5 - show/restore inspector panel
-    if ((e.metaKey || e.ctrlKey) && e.key === "5") {
+    // Cmd+4 / Ctrl+4 - show/restore inspector panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "4") {
       e.preventDefault();
       dockManager.showPanel("inspector");
     }

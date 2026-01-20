@@ -49,3 +49,4 @@ base64 -i certificate.p12 | pbcopy
 - [ ] Auto-update support (Tauri updater plugin)
 - [ ] Windows code signing
 - [ ] Linux .deb/.rpm packages
+

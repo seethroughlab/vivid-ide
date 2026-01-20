@@ -12,9 +12,16 @@ import type {
 import { listen } from "../api/tauri";
 import * as vivid from "../api/vivid";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 // Storage key for persistent layout
 const LAYOUT_STORAGE_KEY = "vivid-ide-layout";
+const WINDOW_SIZE_STORAGE_KEY = "vivid-ide-window-size";
+
+interface WindowSize {
+  width: number;
+  height: number;
+}
 
 // =============================================================================
 // State Store
@@ -153,6 +160,73 @@ class Store {
       layout: { ...this.state.layout, ...partial },
     });
     this.saveLayout();
+  }
+
+  // --- Window Size Persistence ---
+
+  private resizeDebounceTimer: number | null = null;
+
+  private loadWindowSize(): WindowSize | null {
+    try {
+      const stored = localStorage.getItem(WINDOW_SIZE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (typeof parsed.width === "number" && typeof parsed.height === "number") {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("[Store] Failed to load window size:", e);
+    }
+    return null;
+  }
+
+  private saveWindowSize(width: number, height: number): void {
+    try {
+      localStorage.setItem(
+        WINDOW_SIZE_STORAGE_KEY,
+        JSON.stringify({ width, height })
+      );
+    } catch (e) {
+      console.error("[Store] Failed to save window size:", e);
+    }
+  }
+
+  async initWindowSize(): Promise<void> {
+    const saved = this.loadWindowSize();
+    if (saved) {
+      // Clamp to available screen dimensions
+      const finalWidth = Math.min(saved.width, window.screen.availWidth);
+      const finalHeight = Math.min(saved.height, window.screen.availHeight);
+
+      try {
+        const win = getCurrentWindow();
+        await win.setSize(new LogicalSize(finalWidth, finalHeight));
+        console.log(`[Store] Restored window size: ${finalWidth}x${finalHeight}`);
+      } catch (e) {
+        console.error("[Store] Failed to restore window size:", e);
+      }
+    }
+
+    // Setup resize listener
+    this.setupWindowResizeListener();
+  }
+
+  private setupWindowResizeListener(): void {
+    getCurrentWindow()
+      .onResized(({ payload: size }) => {
+        // Debounce saving to avoid excessive writes during resize
+        if (this.resizeDebounceTimer !== null) {
+          clearTimeout(this.resizeDebounceTimer);
+        }
+        this.resizeDebounceTimer = window.setTimeout(() => {
+          this.saveWindowSize(size.width, size.height);
+          console.log(`[Store] Saved window size: ${size.width}x${size.height}`);
+        }, 500);
+      })
+      .catch((e) => {
+        console.error("[Store] Failed to setup resize listener:", e);
+      });
   }
 
   // --- Event Subscriptions ---

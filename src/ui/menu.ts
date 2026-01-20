@@ -51,9 +51,6 @@ async function setupMenuListeners(): Promise<void> {
       case "show_editor":
         dockManager.showPanel("editor");
         break;
-      case "show_preview":
-        dockManager.showPanel("preview");
-        break;
       case "show_console":
         dockManager.showPanel("console");
         break;

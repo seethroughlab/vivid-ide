@@ -24,6 +24,9 @@ async function init(): Promise<void> {
   initMenu();
   setupWindowDragging();
 
+  // Initialize window size (restore saved size or clamp default to screen)
+  await store.initWindowSize();
+
   // Initialize dockview layout
   const container = document.getElementById("dockview-container");
   if (container) {
