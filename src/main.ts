@@ -3,13 +3,9 @@
 // =============================================================================
 
 import { store } from "./state/store";
-import { initTerminal } from "./ui/terminal";
-import { initEditor, loadFile } from "./ui/editor";
-import { initInspector } from "./ui/inspector";
-import { initLayout } from "./ui/layout";
+import { dockManager, loadFile } from "./ui/dock";
 import { initMenu, setupWindowDragging, updateProjectTitle } from "./ui/menu";
 import { initMcpSetup } from "./ui/mcp-setup";
-import { initConsole } from "./ui/console";
 import {
   setupInputForwarding,
   setupKeyboardShortcuts,
@@ -24,22 +20,17 @@ import {
 async function init(): Promise<void> {
   console.log("[Vivid IDE] Initializing...");
 
-  // Initialize UI modules (order matters for some)
-  initLayout();
+  // Initialize menu and window dragging
   initMenu();
   setupWindowDragging();
 
-  // Initialize terminal and editor in parallel
-  await Promise.all([
-    initTerminal(),
-    Promise.resolve(initEditor()),
-  ]);
-
-  // Initialize inspector (depends on store)
-  initInspector();
-
-  // Initialize console panel
-  initConsole();
+  // Initialize dockview layout
+  const container = document.getElementById("dockview-container");
+  if (container) {
+    dockManager.initialize(container);
+  } else {
+    console.error("[Vivid IDE] Dockview container not found");
+  }
 
   // Setup event handlers
   setupInputForwarding();

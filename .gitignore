@@ -3,6 +3,9 @@ node_modules/
 target/
 dist/
 
+# Vivid submodule build artifacts
+vivid/build/
+
 # Build artifacts
 *.dylib
 *.so

@@ -671,14 +671,31 @@ fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, Box<dyn std::er
 
     // View menu
     let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
+        .item(&MenuItemBuilder::with_id("show_terminal", "Terminal")
             .accelerator("CmdOrCtrl+1")
             .build(app)?)
-        .item(&MenuItemBuilder::with_id("toggle_inspector", "Toggle Inspector")
+        .item(&MenuItemBuilder::with_id("show_editor", "Editor")
             .accelerator("CmdOrCtrl+2")
             .build(app)?)
-        .item(&MenuItemBuilder::with_id("toggle_editor", "Toggle Editor")
+        .item(&MenuItemBuilder::with_id("show_preview", "Preview")
             .accelerator("CmdOrCtrl+3")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("show_console", "Output")
+            .accelerator("CmdOrCtrl+4")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("show_inspector", "Parameters")
+            .accelerator("CmdOrCtrl+5")
+            .build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
+            .accelerator("CmdOrCtrl+B")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("toggle_console", "Toggle Output")
+            .accelerator("CmdOrCtrl+J")
+            .build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("reset_layout", "Reset Layout")
+            .accelerator("CmdOrCtrl+Shift+R")
             .build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("toggle_visualizer", "Toggle Node Graph")
@@ -815,19 +832,44 @@ fn main() {
                             let _ = win.emit("menu-action", "reload");
                         }
                     }
+                    "show_terminal" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_terminal");
+                        }
+                    }
+                    "show_editor" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_editor");
+                        }
+                    }
+                    "show_preview" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_preview");
+                        }
+                    }
+                    "show_console" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_console");
+                        }
+                    }
+                    "show_inspector" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_inspector");
+                        }
+                    }
                     "toggle_terminal" => {
                         if let Some(win) = window {
                             let _ = win.emit("menu-action", "toggle_terminal");
                         }
                     }
-                    "toggle_inspector" => {
+                    "toggle_console" => {
                         if let Some(win) = window {
-                            let _ = win.emit("menu-action", "toggle_inspector");
+                            let _ = win.emit("menu-action", "toggle_console");
                         }
                     }
-                    "toggle_editor" => {
+                    "reset_layout" => {
                         if let Some(win) = window {
-                            let _ = win.emit("menu-action", "toggle_editor");
+                            let _ = win.emit("menu-action", "reset_layout");
                         }
                     }
                     "toggle_visualizer" => {

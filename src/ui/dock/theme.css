@@ -1,0 +1,88 @@
+/* =============================================================================
+   Vivid Dockview Theme
+   Minimal overrides on top of dockview-theme-dark
+============================================================================= */
+
+/* Override dark theme colors with our palette */
+.dockview-theme-dark.dockview-theme-vivid {
+  --dv-background-color: rgba(20, 20, 25, 0.85);
+  --dv-tabs-and-actions-container-background-color: rgba(30, 30, 35, 0.9);
+  --dv-separator-border: rgba(100, 100, 120, 0.3);
+  --dv-active-sash-color: #6366f1;
+  --dv-group-view-background-color: rgba(20, 20, 25, 0.85);
+  --dv-activegroup-visiblepanel-tab-background-color: rgba(40, 40, 50, 0.9);
+  --dv-activegroup-hiddenpanel-tab-background-color: rgba(25, 25, 30, 0.8);
+  --dv-inactivegroup-visiblepanel-tab-background-color: rgba(35, 35, 40, 0.8);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: rgba(25, 25, 30, 0.8);
+  --dv-activegroup-visiblepanel-tab-color: rgba(255, 255, 255, 0.95);
+  --dv-activegroup-hiddenpanel-tab-color: rgba(180, 180, 200, 0.7);
+  --dv-inactivegroup-visiblepanel-tab-color: rgba(180, 180, 200, 0.8);
+  --dv-inactivegroup-hiddenpanel-tab-color: rgba(180, 180, 200, 0.6);
+  --dv-drag-over-background-color: rgba(99, 102, 241, 0.3);
+  --dv-drag-over-border-color: #6366f1;
+}
+
+/* Make the container transparent for wgpu rendering behind */
+.dockview-theme-dark.dockview-theme-vivid {
+  background: transparent;
+}
+
+/* Content area styling */
+.dockview-theme-dark.dockview-theme-vivid .dv-content-container {
+  background: rgba(20, 20, 25, 0.85);
+}
+
+/* =============================================================================
+   Transparent Preview Panel Styles
+   Uses :has() selector to target parent containers of #preview-area
+============================================================================= */
+
+.dockview-theme-dark.dockview-theme-vivid .dv-groupview:has(#preview-area),
+.dockview-theme-dark.dockview-theme-vivid .dv-content-container:has(#preview-area) {
+  background: transparent !important;
+}
+
+/* =============================================================================
+   Panel-specific Styling
+============================================================================= */
+
+.terminal-panel-content {
+  height: 100%;
+  overflow: hidden;
+}
+
+.terminal-panel-content #terminal {
+  height: 100%;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.editor-panel-content {
+  height: 100%;
+  overflow: hidden;
+}
+
+.editor-panel-content #editor {
+  height: 100%;
+  width: 100%;
+}
+
+.inspector-panel-content {
+  padding: 12px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.console-panel-content {
+  height: 100%;
+  overflow: hidden;
+}
+
+.console-panel-content .console-output {
+  height: 100%;
+  padding: 8px 12px;
+}
+
+.preview-panel-content {
+  background: transparent !important;
+  height: 100%;
+}

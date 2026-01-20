@@ -4,44 +4,45 @@
 
 import { store, subscribeToKey } from "../state/store";
 import * as vivid from "../api/vivid";
-import * as editor from "../ui/editor";
-import * as layout from "../ui/layout";
+import { jumpToLine, highlightError, clearErrors, dockManager } from "../ui/dock";
 import * as menu from "../ui/menu";
 
 // =============================================================================
 // Input Forwarding
 // =============================================================================
 
-let lastLogTime = 0;
-
 export function setupInputForwarding(): void {
   console.log("[Events] Setting up input forwarding");
 
-  // Mouse move - forward position for hover effects
-  document.addEventListener("mousemove", (e) => {
-    // Don't forward if over a panel
+  // DEBUG: Check if dockview elements are being detected
+  document.addEventListener("mousedown", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest(".panel") || target.closest(".titlebar") || target.closest(".statusbar")) {
-      return;
+    const isDockviewElement = target.closest(".dv-tabs-container, .dv-tab, .dv-sash");
+    if (isDockviewElement) {
+      console.log("[Events] Mousedown on dockview element:", isDockviewElement.className);
     }
+  }, true); // Use capture phase to log before dockview handles it
 
-    // Log occasionally to avoid spam
-    const now = Date.now();
-    if (now - lastLogTime > 1000) {
-      console.log("[Events] Forwarding mouse move:", e.clientX, e.clientY);
-      lastLogTime = now;
+  // Mouse move - forward position for hover effects (only for preview area)
+  document.addEventListener("mousemove", (e) => {
+    const target = e.target as HTMLElement;
+    const previewArea = target.closest("#preview-area");
+
+    if (previewArea) {
+      vivid.inputMouseMove(e.clientX, e.clientY).catch(() => {});
     }
-
-    vivid.inputMouseMove(e.clientX, e.clientY).catch(() => {});
   });
 
   // Mouse buttons - forward for click/drag interactions
+  // Only forward clicks on the preview area to vivid
   document.addEventListener("mousedown", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest(".panel") || target.closest(".titlebar") || target.closest(".statusbar")) {
-      return;
+
+    // Only forward if clicking directly on preview area
+    const previewArea = target.closest("#preview-area");
+    if (previewArea) {
+      vivid.inputMouseButton(e.button, true).catch(() => {});
     }
-    vivid.inputMouseButton(e.button, true).catch(() => {});
   });
 
   document.addEventListener("mouseup", (e) => {
@@ -49,17 +50,15 @@ export function setupInputForwarding(): void {
     vivid.inputMouseButton(e.button, false).catch(() => {});
   });
 
-  // Scroll/wheel - forward for zooming and panning
+  // Scroll/wheel - forward for zooming and panning (only for preview area)
   document.addEventListener("wheel", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest(".panel") || target.closest(".titlebar") || target.closest(".statusbar")) {
-      return;
+    const previewArea = target.closest("#preview-area");
+
+    if (previewArea) {
+      e.preventDefault();
+      vivid.inputScroll(e.deltaX, e.deltaY).catch(() => {});
     }
-    // Prevent default scroll behavior when over node graph area
-    e.preventDefault();
-    vivid.inputScroll(e.deltaX, e.deltaY).catch((err) => {
-      console.error("[Events] input_scroll failed:", err);
-    });
   }, { passive: false });
 
   console.log("[Events] Input forwarding enabled");
@@ -99,30 +98,56 @@ export function setupKeyboardShortcuts(): void {
       await menu.openProject();
     }
 
-    // Cmd+E / Ctrl+E - toggle editor overlay
+    // Cmd+1 / Ctrl+1 - show/restore terminal panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+      e.preventDefault();
+      dockManager.showPanel("terminal");
+    }
+
+    // Cmd+2 / Ctrl+2 - show/restore editor panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "2") {
+      e.preventDefault();
+      dockManager.showPanel("editor");
+    }
+
+    // Cmd+3 / Ctrl+3 - show/restore preview panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "3") {
+      e.preventDefault();
+      dockManager.showPanel("preview");
+    }
+
+    // Cmd+4 / Ctrl+4 - show/restore output/console panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "4") {
+      e.preventDefault();
+      dockManager.showPanel("console");
+    }
+
+    // Cmd+5 / Ctrl+5 - show/restore inspector panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "5") {
+      e.preventDefault();
+      dockManager.showPanel("inspector");
+    }
+
+    // Cmd+E / Ctrl+E - focus editor panel
     if ((e.metaKey || e.ctrlKey) && e.key === "e") {
       if (!target.closest("input, textarea, .xterm")) {
         e.preventDefault();
-        layout.toggleEditor();
+        dockManager.showPanel("editor");
       }
     }
 
-    // Cmd+1 / Ctrl+1 - toggle terminal panel
-    if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+    // Cmd+J / Ctrl+J - toggle console/output panel
+    if ((e.metaKey || e.ctrlKey) && e.key === "j") {
       e.preventDefault();
-      layout.toggleTerminal();
+      dockManager.togglePanel("console");
     }
 
-    // Cmd+2 / Ctrl+2 - toggle parameters/inspector panel
-    if ((e.metaKey || e.ctrlKey) && e.key === "2") {
-      e.preventDefault();
-      layout.toggleInspector();
-    }
-
-    // Cmd+3 / Ctrl+3 - toggle editor panel
-    if ((e.metaKey || e.ctrlKey) && e.key === "3") {
-      e.preventDefault();
-      layout.toggleEditor();
+    // Cmd+B / Ctrl+B - toggle terminal panel (sidebar)
+    if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+      if (!target.closest("input, textarea, .xterm, .monaco-editor")) {
+        e.preventDefault();
+        dockManager.togglePanel("terminal");
+      }
     }
 
     // Cmd+R / Ctrl+R - reload project (when not in editor)
@@ -137,6 +162,13 @@ export function setupKeyboardShortcuts(): void {
           console.error("[Events] Failed to reload:", err);
         }
       }
+    }
+
+    // Cmd+Shift+R / Ctrl+Shift+R - reset layout to default
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "R") {
+      e.preventDefault();
+      console.log("[Events] Resetting layout to default...");
+      dockManager.resetLayout();
     }
   });
 
@@ -158,7 +190,7 @@ export function setupErrorBanner(): void {
     const state = store.get();
     const { compileStatus } = state;
     if (!compileStatus.success && compileStatus.error_line) {
-      editor.jumpToLine(compileStatus.error_line, compileStatus.error_column || 1);
+      jumpToLine(compileStatus.error_line, compileStatus.error_column || 1);
     }
   });
 
@@ -166,9 +198,7 @@ export function setupErrorBanner(): void {
   errorDismiss?.addEventListener("click", (e) => {
     e.stopPropagation();
     const errorBanner = document.getElementById("error-banner");
-    const editorPanel = document.getElementById("editor-panel");
     errorBanner?.classList.add("hidden");
-    editorPanel?.classList.remove("has-error");
   });
 
   // Subscribe to compile status changes
@@ -182,7 +212,6 @@ function handleCompileStatus(status: { success: boolean; message: string | null;
   const errorBanner = document.getElementById("error-banner");
   const errorMessage = document.getElementById("error-message");
   const errorLocation = document.getElementById("error-location");
-  const editorPanel = document.getElementById("editor-panel");
 
   if (status.success) {
     // Compilation succeeded
@@ -198,8 +227,7 @@ function handleCompileStatus(status: { success: boolean; message: string | null;
     }
 
     errorBanner?.classList.add("hidden");
-    editorPanel?.classList.remove("has-error");
-    editor.clearErrors();
+    clearErrors();
   } else {
     // Compilation failed
     if (statusEl) {
@@ -226,10 +254,8 @@ function handleCompileStatus(status: { success: boolean; message: string | null;
       errorBanner.classList.remove("hidden");
     }
 
-    editorPanel?.classList.add("has-error");
-
     if (status.error_line) {
-      editor.highlightError(status.error_line, status.error_column || 1, status.message || "");
+      highlightError(status.error_line, status.error_column || 1, status.message || "");
     }
   }
 }

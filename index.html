@@ -14,78 +14,8 @@
         <span class="status" id="status">WebGPU Active</span>
       </div>
 
-      <!-- Main content area with panels -->
-      <div class="main-content">
-        <!-- Left panel: Terminal (Claude Code) -->
-        <div class="panel panel-left" id="terminal-panel">
-          <div class="panel-header">
-            <span>Claude Code</span>
-            <button class="panel-toggle" id="toggle-terminal">−</button>
-          </div>
-          <div class="panel-content">
-            <div id="terminal"></div>
-          </div>
-        </div>
-
-        <!-- Center area: Editor overlay + Preview + Console -->
-        <div class="center-area">
-          <!-- Editor drops down from top -->
-          <div class="editor-overlay" id="editor-panel">
-            <div class="panel-header">
-              <span class="editor-filename" id="editor-filename">No file open</span>
-              <div class="editor-actions">
-                <button class="editor-btn" id="open-file" title="Open File">Open</button>
-                <button class="editor-btn" id="save-file" title="Save (Cmd+S)">Save</button>
-                <button class="panel-toggle" id="toggle-editor">−</button>
-              </div>
-            </div>
-            <div class="panel-content">
-              <div id="editor"></div>
-            </div>
-          </div>
-
-          <!-- Preview area fills remaining space (transparent for wgpu) -->
-          <div class="preview-area" id="preview-area"></div>
-
-          <!-- Console panel at bottom -->
-          <div class="console-panel" id="console-panel">
-            <div class="panel-header">
-              <span>Output</span>
-              <div class="console-actions">
-                <button class="console-btn" id="clear-console" title="Clear">Clear</button>
-                <button class="panel-toggle" id="toggle-console">−</button>
-              </div>
-            </div>
-            <div class="panel-content">
-              <div id="console-output" class="console-output"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right panel: Parameters (Inspector) -->
-        <div class="panel panel-right" id="inspector-panel">
-          <div class="panel-header">
-            <span>Parameters</span>
-            <button class="panel-toggle" id="toggle-inspector">−</button>
-          </div>
-          <div class="panel-content">
-            <!-- Operator list -->
-            <div class="inspector-section">
-              <div class="section-title">Operators</div>
-              <div id="operator-list" class="operator-list">
-                <!-- Populated dynamically -->
-              </div>
-            </div>
-            <!-- Parameter controls -->
-            <div class="inspector-section">
-              <div class="section-title">Parameters</div>
-              <div id="param-controls" class="param-controls">
-                <div class="no-params">Select an operator</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- Dockview container - replaces old panel layout -->
+      <div id="dockview-container" class="dockview-theme-vivid"></div>
 
       <!-- MCP setup banner (shown when Claude MCP is not configured) -->
       <div class="mcp-banner hidden" id="mcp-banner">

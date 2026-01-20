@@ -46,9 +46,6 @@ base64 -i certificate.p12 | pbcopy
 ---
 
 ## Nice to Have
-- [ ] Custom app icon (replace default Tauri icon)
 - [ ] Auto-update support (Tauri updater plugin)
 - [ ] Windows code signing
 - [ ] Linux .deb/.rpm packages
-
-[ ] opening /Users/jeff/Developer/vivid/modules/vivid-core/examples/color-grading freezes the ide

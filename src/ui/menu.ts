@@ -7,7 +7,7 @@ import { listen, getCurrentWindow } from "../api/tauri";
 import { store } from "../state/store";
 import * as vivid from "../api/vivid";
 import * as editor from "./editor";
-import * as layout from "./layout";
+import { dockManager } from "./dock";
 
 // =============================================================================
 // Menu Initialization
@@ -44,14 +44,32 @@ async function setupMenuListeners(): Promise<void> {
       case "reload":
         await reloadProject();
         break;
+      // Show panel actions (restore if closed)
+      case "show_terminal":
+        dockManager.showPanel("terminal");
+        break;
+      case "show_editor":
+        dockManager.showPanel("editor");
+        break;
+      case "show_preview":
+        dockManager.showPanel("preview");
+        break;
+      case "show_console":
+        dockManager.showPanel("console");
+        break;
+      case "show_inspector":
+        dockManager.showPanel("inspector");
+        break;
+      // Toggle panel actions
       case "toggle_terminal":
-        layout.toggleTerminal();
+        dockManager.togglePanel("terminal");
         break;
-      case "toggle_inspector":
-        layout.toggleInspector();
+      case "toggle_console":
+        dockManager.togglePanel("console");
         break;
-      case "toggle_editor":
-        layout.toggleEditor();
+      // Reset layout
+      case "reset_layout":
+        dockManager.resetLayout();
         break;
     }
   });
