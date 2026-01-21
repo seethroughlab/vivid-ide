@@ -656,6 +656,10 @@ fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, Box<dyn std::er
         .item(&MenuItemBuilder::with_id("reload", "Reload Project")
             .accelerator("CmdOrCtrl+R")
             .build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("export_app", "Export App...")
+            .accelerator("CmdOrCtrl+Shift+E")
+            .build(app)?)
         .build()?;
 
     // Edit menu
@@ -830,6 +834,11 @@ fn main() {
                     "reload" => {
                         if let Some(win) = window {
                             let _ = win.emit("menu-action", "reload");
+                        }
+                    }
+                    "export_app" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "export_app");
                         }
                     }
                     "show_terminal" => {

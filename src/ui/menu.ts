@@ -2,7 +2,7 @@
 // Menu Handlers Module
 // =============================================================================
 
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen, getCurrentWindow } from "../api/tauri";
 import { store } from "../state/store";
 import * as vivid from "../api/vivid";
@@ -43,6 +43,9 @@ async function setupMenuListeners(): Promise<void> {
         break;
       case "reload":
         await reloadProject();
+        break;
+      case "export_app":
+        await exportApp();
         break;
       // Show panel actions (restore if closed)
       case "show_terminal":
@@ -150,6 +153,49 @@ async function reloadProject(): Promise<void> {
     console.log("[Menu] Project reloaded");
   } catch (e) {
     console.error("[Menu] Failed to reload project:", e);
+  }
+}
+
+export async function exportApp(): Promise<void> {
+  const state = store.get();
+
+  if (!state.projectLoaded || !state.projectPath) {
+    alert("No project is currently loaded. Please open a project first.");
+    return;
+  }
+
+  try {
+    // Get the project name for the default app name
+    const projectName = state.projectPath.split("/").pop() || "MyApp";
+
+    // Ask for output directory
+    const outputDir = await save({
+      title: "Export App",
+      defaultPath: `${projectName}.app`,
+      filters: [{ name: "Application", extensions: ["app"] }],
+    });
+
+    if (!outputDir || typeof outputDir !== "string") return;
+
+    // Extract directory from the save path
+    const outputPath = outputDir.replace(/\/[^/]+\.app$/, "");
+    const appName = outputDir.split("/").pop()?.replace(/\.app$/, "") || projectName;
+
+    console.log("[Menu] Exporting app to:", outputPath, "with name:", appName);
+
+    // Show progress (TODO: add a proper progress indicator)
+    const result = await vivid.bundleCurrentProject(outputPath, appName);
+
+    if (result.success) {
+      alert(`App exported successfully!\n\nLocation: ${result.bundle_path || outputDir}`);
+      console.log("[Menu] Export successful:", result);
+    } else {
+      alert(`Export failed:\n\n${result.output}`);
+      console.error("[Menu] Export failed:", result);
+    }
+  } catch (e) {
+    console.error("[Menu] Failed to export app:", e);
+    alert(`Failed to export app: ${e}`);
   }
 }
 
