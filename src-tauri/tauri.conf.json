@@ -58,7 +58,10 @@
       "signingIdentity": null
     },
     "resources": [
-      "../vivid/build/lib/*.dylib"
+      "../vivid/build/lib/*.dylib",
+      "../vivid/build/lib/*.so",
+      "../vivid/build/lib/*.so.*",
+      "../vivid/build/lib/*.dll"
     ],
     "externalBin": []
   },

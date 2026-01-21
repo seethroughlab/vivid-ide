@@ -30,8 +30,9 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event.inputs.vivid_version }}" = "latest" ] || [ -z "${{ github.event.inputs.vivid_version }}" ]; then
-            # Get latest release from vivid repo
-            VERSION=$(curl -s https://api.github.com/repos/seethroughlab/vivid/releases/latest | jq -r '.tag_name')
+            # Get most recent release from vivid repo (including pre-releases)
+            VERSION=$(curl -s https://api.github.com/repos/seethroughlab/vivid/releases | jq -r '.[0].tag_name')
+            echo "Using vivid version: $VERSION"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
             echo "version=${{ github.event.inputs.vivid_version }}" >> $GITHUB_OUTPUT
@@ -46,19 +47,23 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
-            runtime_artifact: vivid-macos-arm64
+            runtime_artifact: vivid-darwin-arm64
+            runtime_ext: tar.gz
             ide_artifact: Vivid-IDE-macos-arm64
           - os: macos-13
             target: x86_64-apple-darwin
-            runtime_artifact: vivid-macos-x64
+            runtime_artifact: vivid-darwin-x64
+            runtime_ext: tar.gz
             ide_artifact: Vivid-IDE-macos-x64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            runtime_artifact: vivid-windows-x64
+            runtime_artifact: vivid-win32-x64
+            runtime_ext: zip
             ide_artifact: Vivid-IDE-windows-x64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             runtime_artifact: vivid-linux-x64
+            runtime_ext: tar.gz
             ide_artifact: Vivid-IDE-linux-x64
 
     runs-on: ${{ matrix.os }}
@@ -69,13 +74,54 @@ jobs:
           submodules: false  # We'll use pre-built runtime
 
       - name: Download vivid runtime
+        shell: bash
         run: |
           mkdir -p vivid-runtime
           # Download from vivid releases
-          curl -L -o runtime.tar.gz \
-            "https://github.com/seethroughlab/vivid/releases/download/${{ needs.resolve-version.outputs.vivid_version }}/${{ matrix.runtime_artifact }}.tar.gz"
-          tar -xzf runtime.tar.gz -C vivid-runtime
+          ARTIFACT_URL="https://github.com/seethroughlab/vivid/releases/download/${{ needs.resolve-version.outputs.vivid_version }}/${{ matrix.runtime_artifact }}.${{ matrix.runtime_ext }}"
+          echo "Downloading: $ARTIFACT_URL"
+          curl -L -o runtime.${{ matrix.runtime_ext }} "$ARTIFACT_URL"
+
+          # Extract based on extension (strip top-level directory)
+          if [ "${{ matrix.runtime_ext }}" = "zip" ]; then
+            unzip -o runtime.zip
+            # Move contents from extracted dir to vivid-runtime
+            mv ${{ matrix.runtime_artifact }}/* vivid-runtime/
+          else
+            tar -xzf runtime.tar.gz --strip-components=1 -C vivid-runtime
+          fi
+          echo "Contents of vivid-runtime:"
           ls -la vivid-runtime/
+          echo "Contents of vivid-runtime/lib:"
+          ls -la vivid-runtime/lib/
+
+          # Create link/junction to expected location for tauri.conf.json resources
+          mkdir -p vivid/build
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # Use junction on Windows (doesn't require admin privileges)
+            cmd //c "mklink /J vivid\\build\\lib ${{ github.workspace }}\\vivid-runtime\\lib"
+          else
+            ln -sf ${{ github.workspace }}/vivid-runtime/lib vivid/build/lib
+          fi
+          echo "Link created: vivid/build/lib -> vivid-runtime/lib"
+
+          # Create placeholder files for glob patterns that won't match on this platform
+          # This prevents Tauri from failing when a glob pattern has no matches
+          # Patterns: *.dylib, *.so, *.so.*, *.dll
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            touch vivid/build/lib/.placeholder.so
+            touch vivid/build/lib/.placeholder.so.0
+            touch vivid/build/lib/.placeholder.dll
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            touch vivid/build/lib/.placeholder.dylib
+            touch vivid/build/lib/.placeholder.dll
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            touch vivid/build/lib/.placeholder.dylib
+            touch vivid/build/lib/.placeholder.so
+            touch vivid/build/lib/.placeholder.so.0
+          fi
+
+          ls -la vivid/build/lib/
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

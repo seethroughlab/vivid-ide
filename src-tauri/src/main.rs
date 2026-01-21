@@ -5,6 +5,7 @@ mod file_ops;
 mod output_capture;
 mod pty;
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -40,6 +41,20 @@ pub struct AppState {
     render_running: AtomicBool,
     /// Frame counter for render timing - incremented by timer thread, decremented after render
     render_pending: AtomicU64,
+    /// Performance stats tracking
+    perf_stats: Mutex<PerformanceStats>,
+    /// Last frame time for FPS calculation
+    last_frame_time: Mutex<Option<Instant>>,
+    /// Frame count since last FPS update
+    fps_frame_count: AtomicU64,
+    /// Time of last FPS update
+    last_fps_time: Mutex<Option<Instant>>,
+    /// FPS history for graphing
+    fps_history: Mutex<VecDeque<f32>>,
+    /// Frame time history for graphing
+    frame_time_history: Mutex<VecDeque<f32>>,
+    /// Memory history for graphing (in MB)
+    memory_history: Mutex<VecDeque<f64>>,
 }
 
 impl Default for AppState {
@@ -51,6 +66,13 @@ impl Default for AppState {
             start_time: Mutex::new(None),
             render_running: AtomicBool::new(false),
             render_pending: AtomicU64::new(0),
+            perf_stats: Mutex::new(PerformanceStats::default()),
+            last_frame_time: Mutex::new(None),
+            fps_frame_count: AtomicU64::new(0),
+            last_fps_time: Mutex::new(None),
+            fps_history: Mutex::new(VecDeque::with_capacity(120)),
+            frame_time_history: Mutex::new(VecDeque::with_capacity(120)),
+            memory_history: Mutex::new(VecDeque::with_capacity(120)),
         }
     }
 }
@@ -96,6 +118,144 @@ impl AppState {
             }
         }
     }
+
+    /// Update performance stats after each frame
+    fn update_performance_stats(&self) {
+        let now = Instant::now();
+        const HISTORY_SIZE: usize = 120;
+
+        // Calculate frame time
+        let frame_time_ms = if let Ok(mut last) = self.last_frame_time.lock() {
+            let dt = if let Some(prev) = *last {
+                (now - prev).as_secs_f32() * 1000.0
+            } else {
+                16.67 // Default to ~60fps
+            };
+            *last = Some(now);
+            dt
+        } else {
+            16.67
+        };
+
+        // Update frame time history
+        if let Ok(mut history) = self.frame_time_history.lock() {
+            history.push_back(frame_time_ms);
+            while history.len() > HISTORY_SIZE {
+                history.pop_front();
+            }
+        }
+
+        // Update FPS counter
+        self.fps_frame_count.fetch_add(1, Ordering::Relaxed);
+
+        // Calculate FPS every second
+        if let Ok(mut last_fps) = self.last_fps_time.lock() {
+            let should_update = if let Some(prev) = *last_fps {
+                (now - prev).as_secs_f32() >= 1.0
+            } else {
+                *last_fps = Some(now);
+                false
+            };
+
+            if should_update {
+                let frames = self.fps_frame_count.swap(0, Ordering::Relaxed);
+                let elapsed = if let Some(prev) = *last_fps {
+                    (now - prev).as_secs_f32()
+                } else {
+                    1.0
+                };
+                let fps = frames as f32 / elapsed;
+                *last_fps = Some(now);
+
+                // Update FPS history
+                if let Ok(mut history) = self.fps_history.lock() {
+                    history.push_back(fps);
+                    while history.len() > HISTORY_SIZE {
+                        history.pop_front();
+                    }
+                }
+
+                // Update memory history (get process memory)
+                if let Ok(mut history) = self.memory_history.lock() {
+                    let memory_mb = get_process_memory_mb();
+                    history.push_back(memory_mb);
+                    while history.len() > HISTORY_SIZE {
+                        history.pop_front();
+                    }
+                }
+
+                // Update perf stats struct
+                if let Ok(mut stats) = self.perf_stats.lock() {
+                    stats.fps = fps;
+                    stats.frame_time_ms = frame_time_ms;
+
+                    if let Ok(history) = self.fps_history.lock() {
+                        stats.fps_history = history.iter().copied().collect();
+                    }
+                    if let Ok(history) = self.frame_time_history.lock() {
+                        stats.frame_time_history = history.iter().copied().collect();
+                    }
+                    if let Ok(history) = self.memory_history.lock() {
+                        stats.memory_history = history.iter().copied().collect();
+                    }
+
+                    // Get operator count and texture memory estimate
+                    if let Some((op_count, tex_mem)) = self.try_with_vivid(|ctx| {
+                        if let Some(chain) = ctx.chain() {
+                            let ops: Vec<_> = chain.operators().collect();
+                            let texture_ops = ops.iter().filter(|op| {
+                                format!("{:?}", op.output_kind()) == "Texture"
+                            }).count();
+                            let tex_mem = texture_ops as u64 * ctx.width() as u64 * ctx.height() as u64 * 4;
+                            (ops.len(), tex_mem)
+                        } else {
+                            (0, 0)
+                        }
+                    }) {
+                        stats.operator_count = op_count;
+                        stats.texture_memory_bytes = tex_mem;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Get process memory usage in MB
+fn get_process_memory_mb() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        // Use ps to get RSS (resident set size) in KB
+        if let Ok(output) = Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+        {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if let Ok(kb) = s.trim().parse::<f64>() {
+                    return kb / 1024.0; // Convert KB to MB
+                }
+            }
+        }
+        0.0
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use GetProcessMemoryInfo
+        0.0 // TODO: implement for Windows
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Read from /proc/self/statm
+        if let Ok(content) = std::fs::read_to_string("/proc/self/statm") {
+            if let Some(rss_pages) = content.split_whitespace().nth(1) {
+                if let Ok(pages) = rss_pages.parse::<f64>() {
+                    return pages * 4.0 / 1024.0; // 4KB pages to MB
+                }
+            }
+        }
+        0.0
+    }
 }
 
 // =============================================================================
@@ -136,6 +296,17 @@ pub struct ParamInfo {
     pub value: [f32; 4],
     pub default_val: [f32; 4],
     pub enum_labels: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PerformanceStats {
+    pub fps: f32,
+    pub frame_time_ms: f32,
+    pub fps_history: Vec<f32>,
+    pub frame_time_history: Vec<f32>,
+    pub memory_history: Vec<f64>,
+    pub texture_memory_bytes: u64,
+    pub operator_count: usize,
 }
 
 // =============================================================================
@@ -205,6 +376,13 @@ fn get_compile_status(state: tauri::State<'_, Arc<AppState>>) -> CompileStatusIn
         error_line: None,
         error_column: None,
     })
+}
+
+#[tauri::command]
+fn get_performance_stats(state: tauri::State<'_, Arc<AppState>>) -> PerformanceStats {
+    state.perf_stats.lock()
+        .map(|s| s.clone())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -681,13 +859,13 @@ fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, Box<dyn std::er
         .item(&MenuItemBuilder::with_id("show_editor", "Editor")
             .accelerator("CmdOrCtrl+2")
             .build(app)?)
-        .item(&MenuItemBuilder::with_id("show_preview", "Preview")
+        .item(&MenuItemBuilder::with_id("show_console", "Output")
             .accelerator("CmdOrCtrl+3")
             .build(app)?)
-        .item(&MenuItemBuilder::with_id("show_console", "Output")
+        .item(&MenuItemBuilder::with_id("show_inspector", "Parameters")
             .accelerator("CmdOrCtrl+4")
             .build(app)?)
-        .item(&MenuItemBuilder::with_id("show_inspector", "Parameters")
+        .item(&MenuItemBuilder::with_id("show_performance", "Performance")
             .accelerator("CmdOrCtrl+5")
             .build(app)?)
         .separator()
@@ -851,11 +1029,6 @@ fn main() {
                             let _ = win.emit("menu-action", "show_editor");
                         }
                     }
-                    "show_preview" => {
-                        if let Some(win) = window {
-                            let _ = win.emit("menu-action", "show_preview");
-                        }
-                    }
                     "show_console" => {
                         if let Some(win) = window {
                             let _ = win.emit("menu-action", "show_console");
@@ -864,6 +1037,11 @@ fn main() {
                     "show_inspector" => {
                         if let Some(win) = window {
                             let _ = win.emit("menu-action", "show_inspector");
+                        }
+                    }
+                    "show_performance" => {
+                        if let Some(win) = window {
+                            let _ = win.emit("menu-action", "show_performance");
                         }
                     }
                     "toggle_terminal" => {
@@ -907,6 +1085,7 @@ fn main() {
             // Vivid state queries
             get_project_info,
             get_compile_status,
+            get_performance_stats,
             get_operators,
             get_operator_params,
             set_param,
@@ -960,6 +1139,9 @@ fn main() {
                                 }
                             }
                         }
+
+                        // Update performance stats
+                        state.update_performance_stats();
                     }
                     RunEvent::WindowEvent {
                         label: _,

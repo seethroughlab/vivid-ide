@@ -10,6 +10,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-01-20
+
+*dock-spawn-ts layout system, performance panel, menu fixes*
+
+### Added
+
+- **Performance panel** - Real-time performance monitoring with:
+  - FPS display with color-coded status (green/yellow/red)
+  - Frame time measurement
+  - Process memory usage tracking
+  - Texture memory estimation
+  - Operator count display
+  - Historical graphs for FPS and memory (120 data points)
+  - Accessible via View > Performance (Cmd+5)
+
+- **dock-spawn-ts layout system** - Replaced custom panel system with dock-spawn-ts:
+  - Drag-and-drop panel rearrangement
+  - Tabbed panel groups
+  - Resizable splitters
+  - Layout persistence to localStorage
+  - Auto-restore layout on startup
+
+### Fixed
+
+- **View menu panel restoration** - Fixed View menu items not working after panels were closed:
+  - Panels now properly re-dock when opened via menu
+  - Added `isPanelInDockTree()` check to detect closed panels
+  - `showPanel()` creates new PanelContainer if panel was closed
+  - `togglePanel()` now properly closes/opens panels
+
+- **Menu accelerators** - Renumbered View menu shortcuts after removing Preview panel:
+  - Terminal: Cmd+1
+  - Editor: Cmd+2
+  - Output: Cmd+3
+  - Parameters: Cmd+4
+  - Performance: Cmd+5
+
+### Changed
+
+- Migrated from custom panel management to dock-spawn-ts library
+- Panel styling unified with consistent dark backgrounds (`rgba(20, 20, 25, 0.9)`)
+- Removed unused Preview panel and menu item
+
 ## [0.1.0-alpha.2] - 2026-01-19
 
 ### Fixed
@@ -87,6 +130,7 @@ src-tauri/            Rust backend
     vivid/            Safe Rust wrapper
 ```
 
-[Unreleased]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/seethroughlab/vivid-ide/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/seethroughlab/vivid-ide/releases/tag/v0.1.0-alpha.1

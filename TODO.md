@@ -49,6 +49,3 @@ base64 -i certificate.p12 | pbcopy
 - [ ] Auto-update support (Tauri updater plugin)
 - [ ] Windows code signing
 - [ ] Linux .deb/.rpm packages
-
-
-[ ] The bundler is still broken. Let's take a step back. It seems like we build the entire vivid runtime forgetting that we would eventually want to bundle production-ready apps without dev features. It seems like we've corrected course, but did we do it responsibly? How would we have approached this differently if the "bundle production apps" feature was front of mind from the beginning?

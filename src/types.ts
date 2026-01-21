@@ -36,6 +36,16 @@ export interface ParamInfo {
   enum_labels: string[];
 }
 
+export interface PerformanceStats {
+  fps: number;
+  frame_time_ms: number;
+  fps_history: number[];
+  frame_time_history: number[];
+  memory_history: number[];
+  texture_memory_bytes: number;
+  operator_count: number;
+}
+
 // --- Event Payload Types ---
 
 export interface VividInitializedPayload {
@@ -94,6 +104,9 @@ export interface AppState {
 
   // Compile state
   compileStatus: CompileStatusInfo;
+
+  // Performance state
+  performanceStats: PerformanceStats;
 
   // Editor state
   currentFilePath: string | null;

@@ -8,6 +8,7 @@ import type {
   CompileStatusInfo,
   OperatorInfo,
   ParamInfo,
+  PerformanceStats,
   BundleOptions,
   BundleResult,
 } from "../types";
@@ -18,6 +19,7 @@ export type {
   CompileStatusInfo,
   OperatorInfo,
   ParamInfo,
+  PerformanceStats,
   BundleOptions,
   BundleResult,
 };
@@ -45,6 +47,13 @@ export async function getProjectInfo(): Promise<ProjectInfo> {
  */
 export async function getCompileStatus(): Promise<CompileStatusInfo> {
   return invoke<CompileStatusInfo>("get_compile_status");
+}
+
+/**
+ * Get performance stats (FPS, frame time, memory)
+ */
+export async function getPerformanceStats(): Promise<PerformanceStats> {
+  return invoke<PerformanceStats>("get_performance_stats");
 }
 
 /**

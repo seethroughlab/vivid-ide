@@ -11,6 +11,7 @@ import {
   createEditorPanel,
   createInspectorPanel,
   createConsolePanel,
+  createPerformancePanel,
 } from "./panels";
 
 // Re-export panel utilities
@@ -32,13 +33,14 @@ export {
   logWarning,
   logError,
   clearConsole,
+  cleanupPerformancePanel,
 } from "./panels";
 
 // Storage key for layout persistence
 const LAYOUT_STORAGE_KEY = "vivid-ide-dock-spawn-layout";
 
 // Panel types
-type PanelId = "terminal" | "editor" | "inspector" | "console";
+type PanelId = "terminal" | "editor" | "inspector" | "console" | "performance";
 
 // Panel configuration
 const PANEL_CONFIG: Record<PanelId, { title: string; icon?: string }> = {
@@ -46,6 +48,7 @@ const PANEL_CONFIG: Record<PanelId, { title: string; icon?: string }> = {
   editor: { title: "Editor" },
   console: { title: "Output" },
   inspector: { title: "Parameters" },
+  performance: { title: "Performance" },
 };
 
 // =============================================================================
@@ -107,6 +110,10 @@ export class DockManager {
         };
 
         await this.dockManager!.loadState(savedState);
+
+        // After restoring, rebuild the panels map from the dock manager's state
+        this.rebuildPanelsMap();
+
         console.log("[DockManager] Restored saved layout");
         return;
       } catch (e) {
@@ -117,6 +124,42 @@ export class DockManager {
 
     // Create default layout
     this.createDefaultLayout();
+  }
+
+  /**
+   * Rebuild the panels map after restoring from saved state
+   */
+  private rebuildPanelsMap(): void {
+    if (!this.dockManager) return;
+
+    // Find all panels in the dock tree and map them by their element ID
+    const findPanels = (node: DockNode | null): void => {
+      if (!node) return;
+
+      // Check if this node has a container with a panel
+      if (node.container && node.container instanceof PanelContainer) {
+        const panel = node.container as PanelContainer;
+        const element = panel.elementContent;
+        if (element && element.id) {
+          const panelId = element.id.replace("panel-", "") as PanelId;
+          if (PANEL_CONFIG[panelId]) {
+            this.panels.set(panelId, panel);
+          }
+        }
+      }
+
+      // Recurse into children
+      if (node.children) {
+        for (const child of node.children) {
+          findPanels(child);
+        }
+      }
+    };
+
+    // Start from the root node
+    findPanels(this.dockManager.context.model.rootNode);
+
+    console.log("[DockManager] Rebuilt panels map with", this.panels.size, "panels");
   }
 
   /**
@@ -174,6 +217,12 @@ export class DockManager {
     inspectorEl.id = "panel-inspector";
     inspectorEl.setAttribute("data-panel-caption", PANEL_CONFIG.inspector.title);
     this.panelElements.set("inspector", inspectorEl);
+
+    // Performance
+    const performanceEl = createPerformancePanel();
+    performanceEl.id = "panel-performance";
+    performanceEl.setAttribute("data-panel-caption", PANEL_CONFIG.performance.title);
+    this.panelElements.set("performance", performanceEl);
   }
 
   /**
@@ -201,6 +250,7 @@ export class DockManager {
     const editorPanel = this.panels.get("editor")!;
     const consolePanel = this.panels.get("console")!;
     const inspectorPanel = this.panels.get("inspector")!;
+    const performancePanel = this.panels.get("performance")!;
 
     // Editor goes in the document area (center)
     const editorNode = this.dockManager.dockFill(documentNode, editorPanel);
@@ -217,6 +267,10 @@ export class DockManager {
     // Inspector on the right (20% width)
     const inspectorNode = this.dockManager.dockRight(documentNode, inspectorPanel, 0.2);
     this.nodes.set("inspector", inspectorNode);
+
+    // Performance panel as a tab in the inspector area
+    const performanceNode = this.dockManager.dockFill(inspectorNode, performancePanel);
+    this.nodes.set("performance", performanceNode);
 
     console.log("[DockManager] Default layout created");
   }
@@ -293,32 +347,97 @@ export class DockManager {
   }
 
   /**
-   * Show/activate a panel
+   * Show/activate a panel - re-docks it if it was closed
    */
   showPanel(id: PanelId): void {
-    const panel = this.panels.get(id);
-    if (panel && this.dockManager) {
-      // If panel is hidden/closed, we need to re-dock it
-      // For now, just focus it if visible
+    if (!this.dockManager) return;
+
+    // Check if panel is still in the dock tree
+    let panel = this.panels.get(id);
+
+    // Check if the panel is actually still docked (not closed)
+    const isPanelDocked = panel && this.isPanelInDockTree(panel);
+
+    if (isPanelDocked && panel) {
+      // Panel exists and is docked - just activate it
       this.dockManager.activePanel = panel;
+      console.log(`[DockManager] Activated panel: ${id}`);
+    } else {
+      // Panel was closed or doesn't exist - need to re-dock it
+      const element = this.panelElements.get(id);
+      if (!element) {
+        console.warn(`[DockManager] No element found for panel: ${id}`);
+        return;
+      }
+
+      // Create a new PanelContainer
+      const newPanel = new PanelContainer(element, this.dockManager, PANEL_CONFIG[id].title);
+      this.panels.set(id, newPanel);
+
+      // Dock it to the document node (center area)
+      const documentNode = this.dockManager.context.model.documentManagerNode;
+      const node = this.dockManager.dockFill(documentNode, newPanel);
+      this.nodes.set(id, node);
+
+      // Activate the new panel
+      this.dockManager.activePanel = newPanel;
+      console.log(`[DockManager] Re-docked panel: ${id}`);
     }
+  }
+
+  /**
+   * Check if a panel is still in the dock tree (not closed)
+   */
+  private isPanelInDockTree(panel: PanelContainer): boolean {
+    if (!this.dockManager) return false;
+
+    const findPanel = (node: DockNode | null): boolean => {
+      if (!node) return false;
+
+      if (node.container === panel) {
+        return true;
+      }
+
+      if (node.children) {
+        for (const child of node.children) {
+          if (findPanel(child)) return true;
+        }
+      }
+      return false;
+    };
+
+    return findPanel(this.dockManager.context.model.rootNode);
   }
 
   /**
    * Toggle a panel's visibility
    */
   togglePanel(id: PanelId): void {
-    // dock-spawn-ts doesn't have a simple hide/show - panels are closed or docked
-    // For now, just show the panel
-    this.showPanel(id);
+    if (!this.dockManager) return;
+
+    const panel = this.panels.get(id);
+    const isDocked = panel && this.isPanelInDockTree(panel);
+
+    if (isDocked && panel) {
+      // Panel is visible - close it
+      try {
+        panel.close();
+        console.log(`[DockManager] Closed panel: ${id}`);
+      } catch (e) {
+        console.warn(`[DockManager] Failed to close panel: ${id}`, e);
+      }
+    } else {
+      // Panel is closed - show it
+      this.showPanel(id);
+    }
   }
 
   /**
-   * Check if a panel is visible
+   * Check if a panel is visible (docked)
    */
   isPanelVisible(id: PanelId): boolean {
     const panel = this.panels.get(id);
-    return panel !== undefined;
+    return panel ? this.isPanelInDockTree(panel) : false;
   }
 
   /**

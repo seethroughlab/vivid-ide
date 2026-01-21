@@ -61,6 +61,17 @@ class Store {
         error_column: null,
       },
 
+      // Performance state
+      performanceStats: {
+        fps: 0,
+        frame_time_ms: 0,
+        fps_history: [],
+        frame_time_history: [],
+        memory_history: [],
+        texture_memory_bytes: 0,
+        operator_count: 0,
+      },
+
       // Editor state
       currentFilePath: null,
       isModified: false,
@@ -391,6 +402,28 @@ class Store {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
+    if (this.perfPollingInterval !== null) {
+      clearInterval(this.perfPollingInterval);
+      this.perfPollingInterval = null;
+    }
+  }
+
+  private perfPollingInterval: number | null = null;
+
+  startPerformancePolling(): void {
+    // Poll performance stats every 500ms for smooth graphs
+    this.perfPollingInterval = window.setInterval(async () => {
+      if (this.state.vividReady) {
+        await this.refreshPerformanceStats();
+      }
+    }, 500);
+  }
+
+  stopPerformancePolling(): void {
+    if (this.perfPollingInterval !== null) {
+      clearInterval(this.perfPollingInterval);
+      this.perfPollingInterval = null;
+    }
   }
 
   async refreshAll(): Promise<void> {
@@ -429,6 +462,15 @@ class Store {
       console.log("[Store] Refreshed operators:", operators.length);
     } catch (e) {
       console.error("[Store] Failed to refresh operators:", e);
+    }
+  }
+
+  async refreshPerformanceStats(): Promise<void> {
+    try {
+      const stats = await vivid.getPerformanceStats();
+      this.set({ performanceStats: stats });
+    } catch (e) {
+      // Silently ignore - performance stats may not be available yet
     }
   }
 

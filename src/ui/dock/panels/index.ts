@@ -6,3 +6,4 @@ export { createTerminalPanel, getTerminal, fit as fitTerminal, focus as focusTer
 export { createEditorPanel, loadFile, openFile, saveFile, highlightError, clearErrors, jumpToLine, goToLine, layout as layoutEditor, getEditor } from "./EditorPanel";
 export { createInspectorPanel } from "./InspectorPanel";
 export { createConsolePanel, logInfo, logSuccess, logWarning, logError, clearConsole } from "./ConsolePanel";
+export { createPerformancePanel, cleanupPerformancePanel } from "./PerformancePanel";

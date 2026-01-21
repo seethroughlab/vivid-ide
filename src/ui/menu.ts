@@ -49,16 +49,24 @@ async function setupMenuListeners(): Promise<void> {
         break;
       // Show panel actions (restore if closed)
       case "show_terminal":
+        console.log("[Menu] Showing terminal panel");
         dockManager.showPanel("terminal");
         break;
       case "show_editor":
+        console.log("[Menu] Showing editor panel");
         dockManager.showPanel("editor");
         break;
       case "show_console":
+        console.log("[Menu] Showing console panel");
         dockManager.showPanel("console");
         break;
       case "show_inspector":
+        console.log("[Menu] Showing inspector panel");
         dockManager.showPanel("inspector");
+        break;
+      case "show_performance":
+        console.log("[Menu] Showing performance panel");
+        dockManager.showPanel("performance");
         break;
       // Toggle panel actions
       case "toggle_terminal":
